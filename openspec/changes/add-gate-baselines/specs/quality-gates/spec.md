@@ -35,8 +35,8 @@ files, `{files}` SHALL be replaced by the file being processed.
 ### Requirement: New errors only
 
 A gate with `newErrorsOnly: tsc` or `newErrorsOnly: eslint` SHALL parse the command's complete output in that tool's
-format (`tsc`: `file(line,col): error TSnnnn: message`; `eslint`: the `unix` formatter,
-`file:line:col: message [severity/rule]`), including when it is longer than the output kept for display. Errors SHALL
+format (`tsc`: `file(line,col): error TSnnnn: message`; `eslint`: the built-in `json` formatter, counting severity 2
+only), including when it is longer than the output kept for display. Errors SHALL
 be compared as counts per file, code or rule, and message, ignoring line and column; an error is new when the step's
 result has more of it than the baseline. A file renamed by a step SHALL be compared with the baseline of its old
 name. The baseline of a command without `{files}` SHALL be taken once per run at the run's base commit and reused on

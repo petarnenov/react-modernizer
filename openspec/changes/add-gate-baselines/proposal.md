@@ -33,7 +33,7 @@ The first full pilot on the real codebase failed on gates, not on the model's wo
 - Commands whose errors are parsed (baseline gates, the type check used by `js-to-ts` and its `check_types` tool) read
   their full output, not the last 20,000 characters.
 - **BREAKING (defaults only):** the default gates become:
-  - `{ run: 'npx eslint --format unix {files}', newErrorsOnly: eslint }`;
+  - `{ run: 'npx eslint --format json {files}', newErrorsOnly: eslint }`;
   - `{ run: 'npx tsc --noEmit --incremental --tsBuildInfoFile {cache}/tsc.tsbuildinfo', newErrorsOnly: tsc }`;
   - `{testRunner} --findRelatedTests {files}`.
 

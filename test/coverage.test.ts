@@ -163,7 +163,7 @@ describe('coverage and protection in the pipeline', () => {
       retries: 1,
       log,
       gates: {
-        commands: ['true'],
+        commands: [{ run: 'true' }],
         forbid: [],
         timeoutSeconds: 30,
         semaphore: new Semaphore(1),

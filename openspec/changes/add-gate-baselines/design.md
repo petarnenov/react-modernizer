@@ -12,8 +12,9 @@ type check to its files with `errorsFor`. The target has 2,996 type errors at th
   They are normalised to one internal type, so every other place sees `{ run, newErrorsOnly? }`.
 - **Parsers** (`src/run/baseline.ts`):
   - tsc: `^(.+)\((\d+),(\d+)\): error (TS\d+): (.*)$` plus indented continuation lines appended to the message.
-  - eslint unix: `^(.+):(\d+):(\d+): (.*) \[(Error|Warning)\/(.+)\]$`. Only `Error` counts, since warnings do not
-    fail eslint.
+  - eslint: the built-in `json` formatter (one line with an array of results). `unix` was the first choice, but
+    ESLint 9 removed it from core ("The unix formatter is no longer part of core ESLint"), checked against ESLint 9.
+    Only severity 2 counts, since warnings do not fail eslint. Absolute `filePath`s are made relative.
 
   The key is `file|code|message`, and the result is a count per key.
 

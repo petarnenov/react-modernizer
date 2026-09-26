@@ -43,9 +43,12 @@ steps:
     typecheckCommand: npx tsc --noEmit --incremental
 
 gates:
-  commands:
-    - npx eslint {files}
-    - npx tsc --noEmit --incremental
+  commands: # a string passes on exit 0; newErrorsOnly fails only on errors not there before
+    - { run: 'npx eslint --format json {files}', newErrorsOnly: eslint }
+    - {
+        run: 'npx tsc --noEmit --incremental --tsBuildInfoFile {cache}/tsc.tsbuildinfo',
+        newErrorsOnly: tsc,
+      }
     - '{testRunner} --findRelatedTests {files}'
   coverage: { min: 80 }
   forbid:

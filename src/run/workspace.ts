@@ -137,8 +137,15 @@ export class Worktree {
   constructor(
     private readonly repo: Repository,
     readonly path: string,
+    /** The worker's `{cache}`: outside the worktree, kept across runs. */
+    readonly cache: string = join(path, '..', 'cache', basename(path)),
   ) {
     this.cwd = repo.prefix === '' ? path : join(path, repo.prefix);
+  }
+
+  /** Puts back whatever changed since the last `stage()`, e.g. files the gates wrote. `node_modules` is left alone. */
+  async discardUnstaged(): Promise<void> {
+    await this.restore(await this.unstagedChanges());
   }
 
   /** Discards everything and checks out `commit`. The linked `node_modules` survives. */
@@ -267,6 +274,7 @@ export async function createWorktrees(
     }
     await git(repo.root, ['worktree', 'add', '--quiet', '--detach', path, commit]);
     const worktree = new Worktree(repo, path);
+    await mkdir(worktree.cache, { recursive: true });
     const link = join(worktree.cwd, 'node_modules');
     if (linkNodeModules && !(await exists(link))) {
       await symlink(targetNodeModules, link, 'dir');

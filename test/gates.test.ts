@@ -9,8 +9,9 @@ import { tempRepo } from './helpers/repo.js';
 
 const run = async (commands: string[], files: string[] = [], timeoutSeconds = 30) =>
   runGateCommands({
-    commands,
+    commands: commands.map((c) => ({ run: c })),
     cwd: await mkdtemp(join(tmpdir(), 'modernizer-gates-')),
+    cache: tmpdir(),
     files,
     timeoutSeconds,
     semaphore: new Semaphore(1),
@@ -30,8 +31,9 @@ describe('runGateCommands', () => {
   it('does not run commands after a failure', async () => {
     const cwd = await mkdtemp(join(tmpdir(), 'modernizer-gates-'));
     await runGateCommands({
-      commands: ['false', 'touch ran-third'],
+      commands: [{ run: 'false' }, { run: 'touch ran-third' }],
       cwd,
+      cache: tmpdir(),
       files: [],
       timeoutSeconds: 30,
       semaphore: new Semaphore(1),
@@ -44,9 +46,12 @@ describe('runGateCommands', () => {
   it('passes each file as one argument, spaces and quotes included', async () => {
     const quoted = await runGateCommands({
       commands: [
-        'set -- {files}; test $# -eq 2 && test "$1" = "src/My Card.jsx" && test "$2" = "it\'s.js"',
+        {
+          run: 'set -- {files}; test $# -eq 2 && test "$1" = "src/My Card.jsx" && test "$2" = "it\'s.js"',
+        },
       ],
       cwd: tmpdir(),
+      cache: tmpdir(),
       files: ['src/My Card.jsx', "it's.js"],
       timeoutSeconds: 30,
       semaphore: new Semaphore(1),
@@ -72,8 +77,9 @@ describe('runGateCommands', () => {
     await Promise.all(
       Array.from({ length: 4 }, () =>
         runGateCommands({
-          commands: [command],
+          commands: [{ run: command }],
           cwd: dir,
+          cache: dir,
           files: [],
           timeoutSeconds: 30,
           semaphore,

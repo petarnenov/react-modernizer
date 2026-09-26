@@ -1,3 +1,4 @@
+import { withCache } from '../../config/commands.js';
 import { access, readFile, rename } from 'node:fs/promises';
 import { join, posix } from 'node:path';
 import ts from 'typescript';
@@ -69,8 +70,12 @@ export function createJsToTsStep(config: ModernizerConfig, model: ModelClient): 
   const modelName = options.model ?? config.model.default;
   const baselines = new Map<string, Baseline>();
 
-  const typecheck = (cwd: string, files: readonly string[]): Promise<string> =>
-    typeErrors(options.typecheckCommand, cwd, files, config.gates.timeoutSeconds);
+  const typecheck = (
+    cwd: string,
+    files: readonly string[],
+    cache: string | undefined,
+  ): Promise<string> =>
+    typeErrors(withCache(options.typecheckCommand, cache), cwd, files, config.gates.timeoutSeconds);
 
   return {
     id: 'js-to-ts',
@@ -167,7 +172,12 @@ export function createJsToTsStep(config: ModernizerConfig, model: ModelClient): 
                     `Write the whole typed ${baseline.test.to}, replacing it. Types only: every test and assertion stays.`,
                   ),
                 ]),
-            checkTypesTool(options.typecheckCommand, ctx.cwd, files, config.gates.timeoutSeconds),
+            checkTypesTool(
+              withCache(options.typecheckCommand, ctx.cache),
+              ctx.cwd,
+              files,
+              config.gates.timeoutSeconds,
+            ),
             runTestsTool(
               ctx.cwd,
               withTestRunner(options.testCommand, config.testRunner).replaceAll(
@@ -208,7 +218,7 @@ export function createJsToTsStep(config: ModernizerConfig, model: ModelClient): 
       const changed = exportsChanged(baseline.exports, exportedValueNames(baseline.to, typed));
       if (changed !== undefined) problems.push(changed);
       if (problems.length === 0) {
-        const errors = await typecheck(ctx.cwd, files);
+        const errors = await typecheck(ctx.cwd, files, ctx.cache);
         if (errors !== '') problems.push(`type errors remain:\n${errors}`);
       }
       if (problems.length > 0) {

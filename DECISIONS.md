@@ -174,3 +174,20 @@
 - **One override path:** `--model` and the picked name go through `applyOverrides`, like `--workers`, so the file is
   never written. Steps with their own `model` keep it, and the run says so.
 - The picker needs a TTY on stdin and stdout; progress rendering still needs only stdout.
+
+## 16. Gate baselines (add-gate-baselines, 2026-09-27)
+
+- **Found in the full pilot:** the target has 2,996 type errors at the base, so a plain `tsc` gate failed every
+  changing step, and the model chased other files' errors (460k tokens for one file).
+- **`newErrorsOnly: tsc | eslint`:** errors counted per file + code/rule + message, line ignored; new = beyond the
+  baseline's count; renamed files mapped to their old name. Whole-project commands: baseline once per run at the tip,
+  cached per command and tip. `{files}` commands: per file before its first step. A non-zero exit with no parsed
+  errors is a crash and fails.
+- **ESLint `--format json`, not `unix`:** ESLint 9 removed `unix` from core (verified against ESLint 9). JSON is in
+  every version.
+- **Full output for parsed commands** (up to 64 MB): the 20,000-character tail hid a step's own type errors behind
+  thousands of others. `js-to-ts` / `simplify` type checks use it too.
+- **`{cache}`** per worker outside the worktree, kept across runs; the default type check writes its build info
+  there. **Gates leave nothing behind:** after the gates, unstaged changes are put back.
+- The `analyze` step's default `lintCommand` still says `--format unix`; on ESLint 9 its evidence is the "formatter
+  removed" message. Not changed here (a separate spec).

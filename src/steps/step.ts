@@ -38,6 +38,8 @@ export interface StepContext {
   report(bug: BugReport): void;
   /** Where the step's model reports what it is doing; passed on as `ToolRunRequest.progress`. */
   progress?: ModelProgressSink | undefined;
+  /** The worker's cache directory, for `{cache}` in commands the step runs. */
+  cache?: string | undefined;
 }
 
 /** One stage of the per-file pipeline. It changes files in `cwd`; the run decides whether to keep the change. */

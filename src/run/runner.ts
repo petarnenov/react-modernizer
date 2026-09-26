@@ -1,13 +1,16 @@
-import { access } from 'node:fs/promises';
+import { createHash } from 'node:crypto';
+import { access, mkdir, readFile, writeFile } from 'node:fs/promises';
+import { countErrors, parseErrors, totalErrors, type ErrorCounts } from './baseline.js';
+import type { GateCommand } from '../config/schema.js';
 import { formatDuration, formatTokens, type ProgressEvent } from './progress.js';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { withTestRunner } from '../config/commands.js';
 import { ConfigError } from '../config/load.js';
 import { STEP_IDS, type ModernizerConfig, type StepId } from '../config/schema.js';
 import { buildGraph } from '../graph/build.js';
 import { runPool, Scheduler, type Outcome } from '../orchestrator/scheduler.js';
 import type { Importer, Step, StepRegistry } from '../steps/step.js';
-import { Semaphore } from './gates.js';
+import { expandCommand, runCommand, Semaphore } from './gates.js';
 import { git, openRepository } from './git.js';
 import { deleteState, emptyState, loadState, StateStore } from './state.js';
 import { processFile } from './transaction.js';
@@ -83,6 +86,46 @@ function firstLine(text: string): string {
 
 export function statePath(runDir: string): string {
   return join(runDir, 'state.json');
+}
+
+/**
+ * Baselines of `newErrorsOnly` gate commands that check the whole project (no `{files}`): taken once, on the fresh
+ * worktree at the run branch's tip, and kept in the run directory for a resume at the same tip.
+ */
+async function takeRunBaselines(
+  commands: readonly GateCommand[],
+  worktree: Worktree | undefined,
+  runDir: string,
+  tip: string,
+  options: { timeoutSeconds: number; phase: (text: string) => void },
+): Promise<Map<string, ErrorCounts>> {
+  const baselines = new Map<string, ErrorCounts>();
+  if (worktree === undefined) return baselines;
+  for (const command of commands) {
+    if (command.newErrorsOnly === undefined || command.run.includes('{files}')) continue;
+    const id = createHash('sha256').update(command.run).digest('hex').slice(0, 16);
+    const path = join(runDir, 'baselines', `${id}-${tip}.json`);
+    let counts = await readFile(path, 'utf8').then(
+      (text) => JSON.parse(text) as ErrorCounts,
+      () => undefined,
+    );
+    if (counts === undefined) {
+      options.phase(`baseline: ${command.run}`);
+      const result = await runCommand(
+        expandCommand(command.run, [], worktree.cache),
+        worktree.cwd,
+        options.timeoutSeconds,
+        { full: true },
+      );
+      counts = countErrors(parseErrors(command.newErrorsOnly, result.output, [worktree.cwd]));
+      await mkdir(dirname(path), { recursive: true });
+      await writeFile(path, JSON.stringify(counts));
+      await worktree.discardUnstaged();
+    }
+    options.phase(`baseline: ${command.run} — ${String(totalErrors(counts))} errors already there`);
+    baselines.set(command.run, counts);
+  }
+  return baselines;
 }
 
 function describeModel(config: ModernizerConfig): string {
@@ -170,6 +213,14 @@ export async function runModernizer(options: RunOptions): Promise<RunSummary> {
     tip,
     join(config.target, 'node_modules'),
   );
+  const gateCommands = config.gates.commands.map((c) => ({
+    ...c,
+    run: withTestRunner(c.run, config.testRunner),
+  }));
+  const runBaselines = await takeRunBaselines(gateCommands, worktrees[0], runDir, tip, {
+    timeoutSeconds: config.gates.timeoutSeconds,
+    phase,
+  });
   const free: Worktree[] = [...worktrees];
   const semaphore = new Semaphore(config.concurrency.gates ?? workers);
   // An object, not a variable: set inside workers, read after the pool.
@@ -194,7 +245,8 @@ export async function runModernizer(options: RunOptions): Promise<RunSummary> {
         base,
         steps,
         gates: {
-          commands: config.gates.commands.map((c) => withTestRunner(c, config.testRunner)),
+          commands: gateCommands,
+          runBaseline: (command) => runBaselines.get(command.run),
           forbid: config.gates.forbid,
           timeoutSeconds: config.gates.timeoutSeconds,
           semaphore,

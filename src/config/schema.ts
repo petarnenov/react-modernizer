@@ -1,3 +1,4 @@
+import { ERROR_FORMATS, type ErrorFormat } from '../run/baseline.js';
 import { z } from 'zod';
 
 /** The steps a file goes through, in this order. Each can be switched off. */
@@ -26,6 +27,23 @@ const DEFAULT_MODEL: Record<ModelProvider, string> = {
 export const DEFAULT_OLLAMA_URL = 'https://ollama.com';
 
 const DEFAULT_INCLUDE = ['src/**/*.{js,jsx}'];
+
+/** Type-checks the whole project, keeping tsc's incremental state outside the worktree. */
+const TYPECHECK = 'npx tsc --noEmit --incremental --tsBuildInfoFile {cache}/tsc.tsbuildinfo';
+
+/** A gate command as written: a string, or a command whose errors are judged against a baseline. */
+const gateCommandSchema = z
+  .union([
+    z.string().min(1),
+    z.object({ run: z.string().min(1), newErrorsOnly: z.enum(ERROR_FORMATS).optional() }).strict(),
+  ])
+  .transform((c): GateCommand => (typeof c === 'string' ? { run: c } : c));
+
+export interface GateCommand {
+  run: string;
+  /** Fail only on errors new against the baseline, parsed in this tool's format. */
+  newErrorsOnly?: ErrorFormat | undefined;
+}
 
 /** A test belongs to the file it tests; it is not a unit of work of its own. */
 export const DEFAULT_EXCLUDE = [
@@ -75,7 +93,7 @@ const stepsSchema = z
     'js-to-ts': stepSchema
       .extend({
         /** Type-checks the project; the step's model sees the errors in its two files. */
-        typecheckCommand: z.string().min(1).default('npx tsc --noEmit --incremental'),
+        typecheckCommand: z.string().min(1).default(TYPECHECK),
         /** What the step's model runs: the tests related to the file. */
         testCommand: z.string().min(1).default('{testRunner} --findRelatedTests {file}'),
         /** Files with shared types to use rather than re-declare, e.g. typed Redux hooks. */
@@ -88,7 +106,7 @@ const stepsSchema = z
         /** Files with fewer code lines (comments and formatting ignored) are not worth a model call. */
         minLines: z.number().int().min(0).default(40),
         testCommand: z.string().min(1).default('{testRunner} --findRelatedTests {file}'),
-        typecheckCommand: z.string().min(1).default('npx tsc --noEmit --incremental'),
+        typecheckCommand: z.string().min(1).default(TYPECHECK),
       })
       .prefault({}),
   })
@@ -116,13 +134,18 @@ export const configSchema = z
     steps: stepsSchema.default(stepsSchema.parse({})),
     gates: z
       .object({
+        /**
+         * Run in order after each step. A string passes when it exits zero; `{ run, newErrorsOnly }` passes when the
+         * tool reports no error that is new against its baseline. `{files}`: the changed files; `{cache}`: a
+         * directory outside the worktree, kept across runs.
+         */
         commands: z
-          .array(z.string().min(1))
+          .array(gateCommandSchema)
           .min(1)
           .default([
-            'npx eslint {files}',
-            'npx tsc --noEmit --incremental',
-            '{testRunner} --findRelatedTests {files}',
+            { run: 'npx eslint --format json {files}', newErrorsOnly: 'eslint' },
+            { run: TYPECHECK, newErrorsOnly: 'tsc' },
+            { run: '{testRunner} --findRelatedTests {files}' },
           ]),
         coverage: z
           .object({ min: z.number().min(0).max(100).default(80) })

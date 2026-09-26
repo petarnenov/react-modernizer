@@ -42,7 +42,7 @@ describe('configuration', () => {
     expect(parseConfig({ target: '.' }).steps.simplify).toMatchObject({
       minLines: 40,
       testCommand: '{testRunner} --findRelatedTests {file}',
-      typecheckCommand: 'npx tsc --noEmit --incremental',
+      typecheckCommand: 'npx tsc --noEmit --incremental --tsBuildInfoFile {cache}/tsc.tsbuildinfo',
     });
     expect(
       parseConfig({ target: '.', steps: { simplify: { minLines: 0 } } }).steps.simplify.minLines,

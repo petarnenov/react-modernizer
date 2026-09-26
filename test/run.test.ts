@@ -92,7 +92,7 @@ describe('processFile', () => {
       base,
       steps,
       gates: {
-        commands: ['! grep -q BROKEN {files}'],
+        commands: [{ run: '! grep -q BROKEN {files}' }],
         forbid: [': any'],
         timeoutSeconds: 30,
         semaphore: new Semaphore(1),

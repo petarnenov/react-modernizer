@@ -4,14 +4,25 @@ import type { StepId } from '../config/schema.js';
 import { UsageMeter, type UsageTotals } from '../model/usage.js';
 import type { BugReport, Importer, Step } from '../steps/step.js';
 import { coverageGate } from './coverage.js';
-import { findForbidden, runGateCommands, type GateResult, type Semaphore } from './gates.js';
+import type { GateCommand } from '../config/schema.js';
+import { countErrors, parseErrors, totalErrors, type ErrorCounts } from './baseline.js';
+import {
+  expandCommand,
+  findForbidden,
+  runCommand,
+  runGateCommands,
+  type GateResult,
+  type Semaphore,
+} from './gates.js';
 import { countTests, weakening, type TestCounts } from './protection.js';
 import { locate, renamedTo } from './tracking.js';
 import type { FileProgress } from './progress.js';
-import type { Worktree } from './workspace.js';
+import type { ChangedFile, Worktree } from './workspace.js';
 
 export interface GateSettings {
-  commands: readonly string[];
+  commands: readonly GateCommand[];
+  /** Baselines of `newErrorsOnly` commands without `{files}`, taken once per run. */
+  runBaseline?: ((command: GateCommand) => ErrorCounts | undefined) | undefined;
   forbid: readonly string[];
   timeoutSeconds: number;
   semaphore: Semaphore;
@@ -57,6 +68,36 @@ interface Pipeline {
   produced: string[];
   /** Counts of protected tests, recorded when the protecting step passed. */
   protected: { path: string; counts: TestCounts }[];
+  /** Baselines of `newErrorsOnly` commands with `{files}`, taken on the file before its first step. */
+  baselines: Map<string, ErrorCounts>;
+}
+
+const perFile = (command: GateCommand) =>
+  command.newErrorsOnly !== undefined && command.run.includes('{files}');
+
+/** Runs each per-file baseline command on the untouched file. */
+async function takeFileBaselines(job: FileJob): Promise<Map<string, ErrorCounts>> {
+  const baselines = new Map<string, ErrorCounts>();
+  const { cwd, cache } = job.worktree;
+  for (const command of job.gates.commands.filter(perFile)) {
+    const label = `baseline: ${command.run}`;
+    job.progress?.({ kind: 'gate-start', command: label });
+    const started = Date.now();
+    const result = await job.gates.semaphore.use(() =>
+      runCommand(expandCommand(command.run, [job.file], cache), cwd, job.gates.timeoutSeconds, {
+        full: true,
+      }),
+    );
+    const counts = countErrors(parseErrors(command.newErrorsOnly ?? 'tsc', result.output, [cwd]));
+    baselines.set(command.run, counts);
+    job.progress?.({
+      kind: 'gate-end',
+      command: `${label} (${String(totalErrors(counts))} errors)`,
+      ok: true,
+      ms: Date.now() - started,
+    });
+  }
+  return baselines;
 }
 
 function describe(result: Exclude<GateResult, { ok: true }>): string {
@@ -99,11 +140,30 @@ async function check(
   if (!protection.ok) {
     return protection;
   }
+  // Whatever the gates write (build info, reports) is not the step's change: put back after them.
+  try {
+    return await runGates(job, pipeline, producing, changed);
+  } finally {
+    await job.worktree.discardUnstaged();
+  }
+}
+
+async function runGates(
+  job: FileJob,
+  pipeline: Pipeline,
+  producing: readonly string[],
+  changed: readonly ChangedFile[],
+): Promise<GateResult> {
+  const { cwd } = job.worktree;
   const present = changed.filter((c) => c.status !== 'D').map((c) => c.path);
   const commands = await runGateCommands({
     commands: job.gates.commands,
     cwd,
     files: present.length > 0 ? present : [pipeline.current],
+    cache: job.worktree.cache,
+    baseline: (command) =>
+      perFile(command) ? pipeline.baselines.get(command.run) : job.gates.runBaseline?.(command),
+    baseName: (file) => changed.find((c) => c.path === file)?.from ?? file,
     timeoutSeconds: job.gates.timeoutSeconds,
     semaphore: job.gates.semaphore,
     onGate: ({ command, ok, ms }) => {
@@ -192,7 +252,12 @@ export async function processFile(job: FileJob): Promise<FileResult> {
   const meter = new UsageMeter(job.tokenBudget);
   const bugs: BugReport[] = [];
   const findings = (): Findings => ({ usage: meter.totals(), bugs });
-  const pipeline: Pipeline = { current: job.file, produced: [], protected: [] };
+  const pipeline: Pipeline = {
+    current: job.file,
+    produced: [],
+    protected: [],
+    baselines: await takeFileBaselines(job),
+  };
   let attempts = 0;
 
   if (job.steps.length === 0) {
@@ -230,6 +295,7 @@ export async function processFile(job: FileJob): Promise<FileResult> {
           // Stamped here, so a step cannot report under another step's name.
           report: (bug) => bugs.push({ ...bug, step: step.id }),
           progress: job.progress,
+          cache: job.worktree.cache,
           ...(previousFailure === undefined ? {} : { previousFailure }),
         });
         const outside = await outsideAllowed(job, step, file);

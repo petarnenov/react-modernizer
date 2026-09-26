@@ -122,7 +122,7 @@ steps:
   simplify: { enabled: false }
 gates:
   commands:
-    - npx eslint {files}
+    - { run: 'npx eslint --format json {files}', newErrorsOnly: eslint }
     - '{testRunner} --findRelatedTests {files}'
     # tsc left out: without a tsconfig.json it fails on every file
 git:
@@ -160,7 +160,9 @@ git show modernizer/pilot-1:src/components/Button.characterization.test.jsx
 When the phase 1 tests look right:
 
 1. For `js-to-ts`, add a `tsconfig.json` to the target (Phase 0 in [docs/design.md](docs/design.md): `allowJs`,
-   `strict`), commit it, and put `npx tsc --noEmit --incremental` back into `gates.commands`. Without it, keep
+   `strict`), commit it, and add
+   `{ run: 'npx tsc --noEmit --incremental --tsBuildInfoFile {cache}/tsc.tsbuildinfo', newErrorsOnly: tsc }` to
+   `gates.commands`. Without it, keep
    `js-to-ts: { enabled: false }`.
 2. In `pilot.yaml`, enable the steps and use a new branch:
 
@@ -220,6 +222,19 @@ raise `steps.analyze.minLines` or give analysis a cheaper model (`steps.analyze.
 
 A step that changes nothing is not re-checked by the gates, so problems a file already has (legacy lint errors) do not
 fail steps that did not touch it.
+
+## Legacy errors: `newErrorsOnly`
+
+A project with thousands of existing type errors would fail every step on a plain `tsc` gate. Write such gates as
+`{ run, newErrorsOnly: tsc | eslint }`: the gate then fails only on errors that are **new**, and the model sees only
+those. For a whole-project command (no `{files}`) the baseline is taken once per run — the log says
+`baseline: … — 2996 errors already there`; for a `{files}` command, on each file before its first step. Errors are
+matched by file, code or rule, and message, not by line, so moved code keeps its errors; a renamed file keeps its
+old name's errors. ESLint must print `--format json` (built into every version; ESLint 9 dropped `unix`).
+
+`{cache}` is a directory per worker outside the worktree, kept between runs: `--tsBuildInfoFile {cache}/tsc.tsbuildinfo`
+keeps `tsc --incremental` fast. Anything the gates write into the worktree is removed after them, so it never becomes
+part of a step's change or a commit.
 
 ## Running `characterize-tests`
 

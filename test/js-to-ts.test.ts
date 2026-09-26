@@ -50,7 +50,7 @@ describe('configuration', () => {
     const config = parseConfig({ target: '.' });
 
     expect(config.steps['js-to-ts']).toMatchObject({
-      typecheckCommand: 'npx tsc --noEmit --incremental',
+      typecheckCommand: 'npx tsc --noEmit --incremental --tsBuildInfoFile {cache}/tsc.tsbuildinfo',
       testCommand: '{testRunner} --findRelatedTests {file}',
       helpers: [],
     });

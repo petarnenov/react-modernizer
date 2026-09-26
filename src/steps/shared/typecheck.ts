@@ -24,7 +24,8 @@ export async function typeErrors(
   files: readonly string[],
   timeoutSeconds: number,
 ): Promise<string> {
-  const result = await runCommand(command, cwd, timeoutSeconds);
+  // Whole output: the project's other errors must not push the step's own out of a truncated tail.
+  const result = await runCommand(command, cwd, timeoutSeconds, { full: true });
   return result.ok ? '' : errorsFor(result.output, files);
 }
 

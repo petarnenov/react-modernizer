@@ -1,3 +1,4 @@
+import { withCache } from '../../config/commands.js';
 import { readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { withTestRunner } from '../../config/commands.js';
@@ -68,7 +69,7 @@ export function createSimplifyStep(config: ModernizerConfig, model: ModelClient)
               `Write the whole simplified ${ctx.file}, replacing it.`,
             ),
             checkTypesTool(
-              options.typecheckCommand,
+              withCache(options.typecheckCommand, ctx.cache),
               ctx.cwd,
               [ctx.file],
               config.gates.timeoutSeconds,
@@ -106,7 +107,7 @@ export function createSimplifyStep(config: ModernizerConfig, model: ModelClient)
       if (simpler !== undefined) problems.push(simpler);
       if (problems.length === 0 && /\.tsx?$/.test(ctx.file)) {
         const errors = await typeErrors(
-          options.typecheckCommand,
+          withCache(options.typecheckCommand, ctx.cache),
           ctx.cwd,
           [ctx.file],
           config.gates.timeoutSeconds,
