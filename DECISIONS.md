@@ -1,0 +1,19 @@
+# Decisions
+
+## 1. Stack (2026-09-26)
+
+- **Node 22.13+, TypeScript, ESM.** Same ecosystem as the code being migrated: ts-morph, ts-migrate, ESLint and Jest
+  are libraries to call, not processes to shell out to from another language.
+- **TypeScript 6.0.3, not 7.x.** `typescript-eslint` 8.70.1 supports `>=4.8.4 <6.1.0`. Move to 7 when it does.
+- Pinned exact versions: commander 15.0.0, yaml 2.9.1, zod 4.6.5, eslint 10.11.0, typescript-eslint 8.70.1,
+  vitest 5.0.2, prettier 3.9.9, @types/node 26.6.3.
+- **zod for config.** One schema is both the validation and the type; defaults live in one place.
+- **Vitest for this repo's tests.** The tool's own tests; the target codebase keeps Jest.
+
+## 2. Orchestration (2026-09-26)
+
+- **Default one worker.** Predictable and debuggable for the pilot; `--workers` raises it.
+- **One scheduler for any concurrency.** A dependency-ordered ready queue; `runPool` only limits how many run at once.
+  A parallel mode that is not the everyday mode would first run for real on thousands of files.
+- **Failed dependency = settled.** It stays JavaScript; its dependents are still worth migrating.
+- **Cycles are broken, not reported and stopped.** At the file with the fewest unsettled imports.
