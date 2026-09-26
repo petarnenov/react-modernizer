@@ -8,11 +8,35 @@ export class ConfigError extends Error {
   override readonly name = 'ConfigError';
 }
 
-/** Validates raw config data. Throws {@link ConfigError} listing every problem with its path. */
-export function parseConfig(raw: unknown): ModernizerConfig {
+/** Options the tool used to accept, and what to do about each now. */
+const REMOVED_OPTIONS: Record<string, string> = {
+  'steps.js-to-ts.codemod':
+    'removed: ts-migrate is no longer used, because it inserts `any` and `@ts-expect-error` — delete this line',
+};
+
+function valueAt(raw: unknown, path: string): unknown {
+  let node = raw;
+  for (const key of path.split('.')) {
+    if (typeof node !== 'object' || node === null || !(key in node)) return undefined;
+    node = (node as Record<string, unknown>)[key];
+  }
+  return node;
+}
+
+/**
+ * Validates raw config data. Throws {@link ConfigError} listing every problem with its path, naming `source` (the
+ * file) when given, with a hint for each option that was removed.
+ */
+export function parseConfig(raw: unknown, source?: string): ModernizerConfig {
   const result = configSchema.safeParse(raw ?? {});
   if (!result.success) {
-    throw new ConfigError(`Invalid config:\n${z.prettifyError(result.error)}`);
+    const hints = Object.entries(REMOVED_OPTIONS)
+      .filter(([path]) => valueAt(raw, path) !== undefined)
+      .map(([path, hint]) => `  ${path}: ${hint}`);
+    throw new ConfigError(
+      `Invalid config${source === undefined ? '' : ` in ${source}`}:\n${z.prettifyError(result.error)}` +
+        (hints.length === 0 ? '' : `\n\nRemoved options:\n${hints.join('\n')}`),
+    );
   }
   const config = result.data;
   config.concurrency.gates ??= config.concurrency.workers;
@@ -28,7 +52,13 @@ export async function loadConfig(path: string): Promise<ModernizerConfig> {
   } catch (error) {
     throw new ConfigError(`Cannot read config ${absolute}: ${(error as Error).message}`);
   }
-  const config = parseConfig(parse(text));
+  let raw: unknown;
+  try {
+    raw = parse(text);
+  } catch (error) {
+    throw new ConfigError(`Cannot parse config ${absolute}: ${(error as Error).message}`);
+  }
+  const config = parseConfig(raw, absolute);
   config.target = resolve(dirname(absolute), config.target);
   return config;
 }

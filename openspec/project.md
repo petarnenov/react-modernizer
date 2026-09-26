@@ -10,7 +10,8 @@ simplifies it — accepting each step only when lint, the type checker and the t
 - Node.js ≥ 22.13, TypeScript (strict), ESM. Exact versions pinned in package.json and explained in DECISIONS.md.
 - zod for configuration; yaml for the config file; commander for the CLI.
 - Vitest for this repository's tests. The target codebase keeps its own test runner (Jest).
-- Planned: Claude Agent SDK for model calls; ts-morph, ts-migrate and react-codemod for mechanical transforms.
+- Model calls through the Anthropic SDK (`@anthropic-ai/sdk`) tool runner, behind a `ModelClient` interface, with
+  tools we define. Parsing, detection, renames and every check use the TypeScript compiler API. No codemods.
 
 ## Layout
 

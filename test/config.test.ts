@@ -142,6 +142,41 @@ describe('loadConfig', () => {
     expect(config.concurrency.workers).toBe(3);
   });
 
+  it('names the file in validation errors', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'modernizer-'));
+    const file = join(dir, 'modernizer.config.yaml');
+    await writeFile(file, 'target: .\nconcurrency: { workers: 0 }\n');
+
+    await expect(loadConfig(file)).rejects.toThrow(`Invalid config in ${file}:`);
+  });
+
+  it('explains a removed option and what to do', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'modernizer-'));
+    const file = join(dir, 'modernizer.config.yaml');
+    await writeFile(
+      file,
+      'target: .\nsteps:\n  js-to-ts: { enabled: true, codemod: ts-migrate }\n',
+    );
+
+    const error = await loadConfig(file).then(
+      () => new Error('expected loadConfig to fail'),
+      (e: unknown) => e as Error,
+    );
+
+    expect(error.message).toContain(
+      'steps.js-to-ts.codemod: removed: ts-migrate is no longer used',
+    );
+    expect(error.message).toContain('delete this line');
+  });
+
+  it('names the file when the YAML itself is broken', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'modernizer-'));
+    const file = join(dir, 'modernizer.config.yaml');
+    await writeFile(file, 'target: [unclosed\n');
+
+    await expect(loadConfig(file)).rejects.toThrow(`Cannot parse config ${file}`);
+  });
+
   it('reports a missing file as a config error', async () => {
     await expect(loadConfig('/does/not/exist.yaml')).rejects.toThrow(ConfigError);
   });
