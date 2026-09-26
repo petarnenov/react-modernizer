@@ -85,6 +85,7 @@ export function createClassToFunctionStep(config: ModernizerConfig, model: Model
             }, `Record a suspected bug in ${ctx.file}. Keep the current behaviour; this is how a bug gets noticed.`),
           ],
           maxIterations: MAX_ITERATIONS,
+          progress: ctx.progress,
         },
         ctx.usage,
       );

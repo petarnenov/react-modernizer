@@ -8,6 +8,7 @@ import {
   type ToolRunRequest,
   type ToolRunResult,
 } from './client.js';
+import { toolDetail } from '../run/progress.js';
 import type { RateLimiter } from './rate-limit.js';
 import type { UsageMeter } from './usage.js';
 
@@ -29,6 +30,11 @@ function textOf(message: BetaMessage): string {
     .flatMap((block) => (block.type === 'text' ? [block.text] : []))
     .join('\n')
     .trim();
+}
+
+export function optionalDetail(tool: string, input: unknown): { detail?: string } {
+  const detail = toolDetail(tool, input);
+  return detail === undefined ? {} : { detail };
 }
 
 /** {@link ModelClient} over the official SDK's tool runner. */
@@ -86,7 +92,14 @@ export class AnthropicModelClient implements ModelClient {
           name: tool.name,
           description: tool.description,
           inputSchema: tool.inputSchema,
-          run: (input) => tool.run(input),
+          run: (input) => {
+            request.progress?.({
+              kind: 'tool-call',
+              tool: tool.name,
+              ...optionalDetail(tool.name, input),
+            });
+            return tool.run(input);
+          },
         }),
       ),
       messages: [{ role: 'user', content: request.prompt }],
@@ -98,9 +111,10 @@ export class AnthropicModelClient implements ModelClient {
     // Iterated by hand: each step of the iterator is one request, so the rate limit and the budget apply per request.
     const iterator = runner[Symbol.asyncIterator]();
     let last: BetaMessage | undefined;
-    for (;;) {
+    for (let turn = 1; ; turn++) {
       meter.assertWithinBudget();
-      await this.limiter.acquire();
+      await this.limiter.acquire((ms) => request.progress?.({ kind: 'rate-wait', ms }));
+      request.progress?.({ kind: 'model-turn', turn });
       const next = await iterator.next();
       if (next.done === true) {
         break;

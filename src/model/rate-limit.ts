@@ -25,14 +25,15 @@ export class RateLimiter {
     }
   }
 
-  acquire(): Promise<void> {
+  /** `onWait` is told how long the caller will wait, when it has to. */
+  acquire(onWait?: (ms: number) => void): Promise<void> {
     // Serialised, so concurrent callers are admitted in order and never both take the last slot.
-    const turn = this.queue.then(() => this.take());
+    const turn = this.queue.then(() => this.take(onWait));
     this.queue = turn.catch(() => undefined);
     return turn;
   }
 
-  private async take(): Promise<void> {
+  private async take(onWait?: (ms: number) => void): Promise<void> {
     for (;;) {
       const now = this.clock.now();
       while (this.starts.length > 0 && now - (this.starts[0] ?? 0) >= 60_000) {
@@ -42,7 +43,9 @@ export class RateLimiter {
         this.starts.push(now);
         return;
       }
-      await this.clock.sleep(60_000 - (now - (this.starts[0] ?? now)));
+      const wait = 60_000 - (now - (this.starts[0] ?? now));
+      onWait?.(wait);
+      await this.clock.sleep(wait);
     }
   }
 }

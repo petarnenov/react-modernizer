@@ -6,6 +6,7 @@ import { TargetError } from './graph/discover.js';
 import { createPlan, renderPlan } from './plan.js';
 import { ModelAccessError } from './model/client.js';
 import { RepositoryError } from './run/git.js';
+import { PlainProgress, TerminalProgress } from './run/progress.js';
 import { runModernizer, StepsMissingError } from './run/runner.js';
 import { StateError } from './run/state.js';
 import { describeStatus } from './run/status.js';
@@ -15,6 +16,8 @@ import type { StepRegistry } from './steps/step.js';
 export interface Io {
   stdout: (text: string) => void;
   stderr: (text: string) => void;
+  /** A live status display is possible: stdout is an interactive terminal. */
+  terminal?: boolean;
 }
 
 function positiveInt(value: string): number {
@@ -69,15 +72,24 @@ function createProgram(io: Io, setExit: (code: number) => void, stepsFor: StepsF
     .option('--fresh', 'discard the saved state and process every file again')
     .action(async (path: string, options: { workers?: number; fresh?: boolean }) => {
       const config = applyOverrides(await loadConfig(path), options);
-      const summary = await runModernizer({
-        config,
-        steps: stepsFor(config),
-        fresh: options.fresh === true,
-        log: (line) => {
-          io.stdout(`${line}\n`);
-        },
-      });
-      setExit(summary.stopped ? 3 : 0);
+      const renderer =
+        io.terminal === true ? new TerminalProgress(io.stdout) : new PlainProgress(io.stdout);
+      try {
+        const summary = await runModernizer({
+          config,
+          steps: stepsFor(config),
+          fresh: options.fresh === true,
+          log: (line) => {
+            renderer.line(line);
+          },
+          progress: (event) => {
+            renderer.event(event);
+          },
+        });
+        setExit(summary.stopped ? 3 : 0);
+      } finally {
+        renderer.stop();
+      }
     });
 
   program

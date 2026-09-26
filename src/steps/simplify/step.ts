@@ -87,6 +87,7 @@ export function createSimplifyStep(config: ModernizerConfig, model: ModelClient)
             }, `Record a suspected bug in ${ctx.file}. Keep the current behaviour; this is how a bug gets noticed.`),
           ],
           maxIterations: MAX_ITERATIONS,
+          progress: ctx.progress,
         },
         ctx.usage,
       );

@@ -95,6 +95,8 @@ export interface GateCommandsOptions {
   files: readonly string[];
   timeoutSeconds: number;
   semaphore: Semaphore;
+  /** Told when each command starts, and how it ended. */
+  onGate?: ((event: { command: string; ok?: boolean; ms?: number }) => void) | undefined;
 }
 
 /** Runs the gate commands in order and stops at the first failure. */
@@ -102,9 +104,13 @@ export async function runGateCommands(options: GateCommandsOptions): Promise<Gat
   const files = options.files.map(shellQuote).join(' ');
   for (const template of options.commands) {
     const command = template.replaceAll('{files}', files);
-    const result = await options.semaphore.use(() =>
-      runCommand(command, options.cwd, options.timeoutSeconds),
-    );
+    const result = await options.semaphore.use(async () => {
+      options.onGate?.({ command: template });
+      const started = Date.now();
+      const ran = await runCommand(command, options.cwd, options.timeoutSeconds);
+      options.onGate?.({ command: template, ok: ran.ok, ms: Date.now() - started });
+      return ran;
+    });
     if (!result.ok) {
       return { ok: false, gate: template, output: result.output };
     }

@@ -1,3 +1,4 @@
+import type { ModelProgressSink } from '../model/client.js';
 import type { StepId } from '../config/schema.js';
 import type { UsageMeter } from '../model/usage.js';
 
@@ -35,6 +36,8 @@ export interface StepContext {
   /** Processed files that import this one (from the import graph). */
   importers: readonly Importer[];
   report(bug: BugReport): void;
+  /** Where the step's model reports what it is doing; passed on as `ToolRunRequest.progress`. */
+  progress?: ModelProgressSink | undefined;
 }
 
 /** One stage of the per-file pipeline. It changes files in `cwd`; the run decides whether to keep the change. */

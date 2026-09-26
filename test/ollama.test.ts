@@ -286,3 +286,25 @@ describe('createModelClient', () => {
     expect(createModelClient(parseConfig({ target: '.' }))).toBeInstanceOf(AnthropicModelClient);
   });
 });
+
+describe('OllamaModelClient progress', () => {
+  it('reports each turn and each tool call with its safe detail only', async () => {
+    const { ollama } = client([
+      reply({
+        tool_calls: [
+          { function: { name: 'report_bug', arguments: { reason: 'private', line: 7 } } },
+        ],
+      }),
+      reply({ content: 'ok' }),
+    ]);
+    const events: unknown[] = [];
+
+    await ollama.runTools(request({ progress: (e) => events.push(e) }), new UsageMeter());
+
+    expect(events).toEqual([
+      { kind: 'model-turn', turn: 1 },
+      { kind: 'tool-call', tool: 'report_bug', detail: 'line 7' },
+      { kind: 'model-turn', turn: 2 },
+    ]);
+  });
+});

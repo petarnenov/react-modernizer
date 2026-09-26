@@ -10,6 +10,14 @@ export interface ModelTool<Input = unknown> {
   run(input: Input): Promise<string>;
 }
 
+/** What a model client reports while it works on one file. Names, paths, counts and times only — never content. */
+export type ModelProgress =
+  | { kind: 'model-turn'; turn: number }
+  | { kind: 'tool-call'; tool: string; detail?: string }
+  | { kind: 'rate-wait'; ms: number };
+
+export type ModelProgressSink = (event: ModelProgress) => void;
+
 export interface ToolRunRequest {
   model: string;
   effort: Effort;
@@ -21,6 +29,8 @@ export interface ToolRunRequest {
   tools: ModelTool<never>[];
   /** Upper bound on model turns for one call. */
   maxIterations: number;
+  /** Told about each request, tool call and rate-limit wait. */
+  progress?: ModelProgressSink | undefined;
 }
 
 export interface ToolRunResult {

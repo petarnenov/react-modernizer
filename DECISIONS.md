@@ -144,3 +144,12 @@
 - **Preflight is `GET /api/tags`:** catches a bad key and an unknown model without spending tokens. A missing key is
   an error only for a non-loopback `baseUrl`. The key is read from the variable named by `model.apiKeyEnv`.
 - **Retries:** 429, 5xx and network errors twice (2 s, 8 s); 401/403 never; 10-minute timeout per request.
+
+## 13. Run progress (add-run-progress, 2026-09-26)
+
+- **One typed event stream** (`src/run/progress.ts`), threaded through `RunOptions`, `FileJob`, `StepContext` and
+  `ToolRunRequest`. Model clients are shared by workers, so each event is bound to its file by the transaction.
+- **Only names, paths, counts and times.** Tool detail is a whitelist: `path`, or `line` for `report_bug`.
+- **Two renderers, no dependency:** a live block of one line per active file in a TTY (ANSI cursor-up and clear,
+  lines cut to the terminal width so the redraw count stays right), timestamped lines otherwise. `NO_COLOR` and
+  `TERM=dumb` get the plain one.

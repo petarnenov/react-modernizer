@@ -182,6 +182,7 @@ export function createJsToTsStep(config: ModernizerConfig, model: ModelClient): 
             }, `Record a suspected bug in ${baseline.to}. Keep the current behaviour; this is how a bug gets noticed.`),
           ],
           maxIterations: MAX_ITERATIONS,
+          progress: ctx.progress,
         },
         ctx.usage,
       );

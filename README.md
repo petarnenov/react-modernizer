@@ -132,6 +132,11 @@ node dist/bin.js run pilot.yaml
 node dist/bin.js status pilot.yaml
 ```
 
+While it runs, a live line per worker shows the file (`[2/7]`), the step and attempt, the model's current turn or
+tool (`read_file src/api.js`), rate-limit waits and the gate being run, with the elapsed time. Finished steps, gates
+and files stay above it. Piped to a file (`| tee run.log`), every event is a timestamped line instead. File contents,
+prompts and model text are never printed.
+
 Review, in the target:
 
 ```sh

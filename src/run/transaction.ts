@@ -7,6 +7,7 @@ import { coverageGate } from './coverage.js';
 import { findForbidden, runGateCommands, type GateResult, type Semaphore } from './gates.js';
 import { countTests, weakening, type TestCounts } from './protection.js';
 import { locate, renamedTo } from './tracking.js';
+import type { FileProgress } from './progress.js';
 import type { Worktree } from './workspace.js';
 
 export interface GateSettings {
@@ -35,6 +36,8 @@ export interface FileJob {
   tokenBudget?: number;
   /** Processed files that import this one. */
   importers?: readonly Importer[];
+  /** Told what happens to the file as it happens. */
+  progress?: (event: FileProgress) => void;
 }
 
 interface Findings {
@@ -103,6 +106,13 @@ async function check(
     files: present.length > 0 ? present : [pipeline.current],
     timeoutSeconds: job.gates.timeoutSeconds,
     semaphore: job.gates.semaphore,
+    onGate: ({ command, ok, ms }) => {
+      job.progress?.(
+        ok === undefined || ms === undefined
+          ? { kind: 'gate-start', command }
+          : { kind: 'gate-end', command, ok, ms },
+      );
+    },
   });
   if (!commands.ok) {
     return commands;
@@ -119,7 +129,10 @@ async function check(
   if (tests.length === 0) {
     return { ok: true };
   }
-  return coverageGate({
+  const coverageCommand = `coverage ≥ ${String(job.gates.coverageMin)}%`;
+  job.progress?.({ kind: 'gate-start', command: coverageCommand });
+  const started = Date.now();
+  const coverage = await coverageGate({
     testRunner: job.gates.testRunner,
     cwd,
     file: pipeline.current,
@@ -128,6 +141,13 @@ async function check(
     timeoutSeconds: job.gates.timeoutSeconds,
     semaphore: job.gates.semaphore,
   });
+  job.progress?.({
+    kind: 'gate-end',
+    command: coverageCommand,
+    ok: coverage.ok,
+    ms: Date.now() - started,
+  });
+  return coverage;
 }
 
 /**
@@ -191,8 +211,15 @@ export async function processFile(job: FileJob): Promise<FileResult> {
     // Staged here, so unstaged changes after the step are exactly what the step did.
     await job.worktree.stage();
     const before = await job.worktree.stagedTree();
+    const stepStarted = Date.now();
+    const bugsBefore = bugs.length;
+    let changed = false;
     for (let attempt = 0; attempt <= job.retries && !passed && !meter.exhausted; attempt++) {
       attempts++;
+      if (attempt > 0 && previousFailure !== undefined) {
+        job.progress?.({ kind: 'retry', step: step.id, attempt, reason: previousFailure });
+      }
+      job.progress?.({ kind: 'step-start', step: step.id, attempt });
       try {
         await step.run({
           file,
@@ -202,6 +229,7 @@ export async function processFile(job: FileJob): Promise<FileResult> {
           importers: job.importers ?? [],
           // Stamped here, so a step cannot report under another step's name.
           report: (bug) => bugs.push({ ...bug, step: step.id }),
+          progress: job.progress,
           ...(previousFailure === undefined ? {} : { previousFailure }),
         });
         const outside = await outsideAllowed(job, step, file);
@@ -219,6 +247,7 @@ export async function processFile(job: FileJob): Promise<FileResult> {
         const result = await check(job, pipeline, producing);
         if (result.ok) {
           passed = true;
+          changed = true;
         } else {
           previousFailure = describe(result);
         }
@@ -238,6 +267,13 @@ export async function processFile(job: FileJob): Promise<FileResult> {
         ...findings(),
       };
     }
+    job.progress?.({
+      kind: 'step-end',
+      step: step.id,
+      ms: Date.now() - stepStarted,
+      findings: bugs.length - bugsBefore,
+      changed,
+    });
     pipeline.produced.push(...producing);
     if (step.id === job.gates.protectTestsFrom) {
       await recordProtected(job, pipeline, producing);

@@ -86,6 +86,7 @@ export function createAnalyzeStep(config: ModernizerConfig, model: ModelClient):
             }, `Record one finding in ${ctx.file}: its line, severity and reason.`),
           ],
           maxIterations: MAX_ITERATIONS,
+          progress: ctx.progress,
         },
         ctx.usage,
       );

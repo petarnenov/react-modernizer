@@ -1,4 +1,5 @@
 import { access } from 'node:fs/promises';
+import { formatDuration, formatTokens, type ProgressEvent } from './progress.js';
 import { join } from 'node:path';
 import { withTestRunner } from '../config/commands.js';
 import { ConfigError } from '../config/load.js';
@@ -34,6 +35,8 @@ export interface RunOptions {
   /** Discard the saved state and process every file again. */
   fresh?: boolean;
   log: (line: string) => void;
+  /** Told what the run is doing as it happens. */
+  progress?: (event: ProgressEvent) => void;
 }
 
 export interface RunSummary {
@@ -81,9 +84,19 @@ export function statePath(runDir: string): string {
   return join(runDir, 'state.json');
 }
 
+function describeModel(config: ModernizerConfig): string {
+  return config.model.provider === 'ollama'
+    ? `${config.model.default} at ${config.model.baseUrl}`
+    : `${config.model.default} (Anthropic)`;
+}
+
 /** Processes the target file by file. The user's checkout is never touched; accepted files land on the run branch. */
 export async function runModernizer(options: RunOptions): Promise<RunSummary> {
   const { config, log } = options;
+  const progress = options.progress ?? (() => undefined);
+  const phase = (text: string) => {
+    progress({ kind: 'phase', text });
+  };
   const steps = resolveSteps(config, options.steps);
   if (config.steps['js-to-ts'].enabled && !(await exists(join(config.target, 'tsconfig.json')))) {
     throw new ConfigError(
@@ -91,8 +104,15 @@ export async function runModernizer(options: RunOptions): Promise<RunSummary> {
         '(allowJs, strict — see "Phase 0" in docs/design.md), or disable js-to-ts.',
     );
   }
+  phase('scanning source and building the import graph');
   const graph = await buildGraph(config.target, config.source);
+  phase(
+    `import graph: ${String(graph.files.length)} files, ${String([...graph.edges.values()].reduce((n, e) => n + e.length, 0))} internal imports`,
+  );
   // Before any file: a step that cannot work (no credentials, unreachable model) stops the run here.
+  if (steps.some((s) => s.preflight !== undefined)) {
+    phase(`checking model access: ${describeModel(config)}`);
+  }
   for (const step of steps) {
     await step.preflight?.();
   }
@@ -141,6 +161,7 @@ export async function runModernizer(options: RunOptions): Promise<RunSummary> {
   }
 
   const workers = config.concurrency.workers;
+  phase(`preparing ${String(workers)} worktree${workers === 1 ? '' : 's'}`);
   const worktrees = await createWorktrees(
     repo,
     runDir,
@@ -153,11 +174,17 @@ export async function runModernizer(options: RunOptions): Promise<RunSummary> {
   // An object, not a variable: set inside workers, read after the pool.
   const control = { stopped: false };
 
+  let started = resumed;
   const work = async (file: string): Promise<Outcome> => {
     const worktree = free.pop();
     if (worktree === undefined) {
       throw new Error('no free worktree'); // cannot happen: one worktree per worker
     }
+    started++;
+    progress({ kind: 'file-start', file, index: started, total: graph.files.length });
+    const fileStarted = Date.now();
+    const cost = (usage: { inputTokens: number; outputTokens: number }) =>
+      `(${formatDuration(Date.now() - fileStarted)} · ${formatTokens(usage.inputTokens + usage.outputTokens)} tokens)`;
     try {
       const base = await branch.tip();
       let result = await processFile({
@@ -177,6 +204,9 @@ export async function runModernizer(options: RunOptions): Promise<RunSummary> {
         retries: config.retry.perStep,
         tokenBudget: config.budget.maxTokensPerFile,
         importers: importers.get(file) ?? [],
+        progress: (event) => {
+          progress({ ...event, file });
+        },
       });
       let commit: string | undefined;
       if (result.status === 'done' && result.commit !== undefined) {
@@ -202,7 +232,11 @@ export async function runModernizer(options: RunOptions): Promise<RunSummary> {
           ...(commit === undefined ? {} : { commit }),
           ...(result.bugs.length === 0 ? {} : { bugs: result.bugs }),
         });
-        log(commit === undefined ? `· ${file} (unchanged)` : `✓ ${file} ${commit.slice(0, 7)}`);
+        log(
+          commit === undefined
+            ? `· ${file} unchanged ${cost(result.usage)}`
+            : `✓ ${file} ${commit.slice(0, 7)} ${cost(result.usage)}`,
+        );
         return 'done';
       }
       await store.record(file, {
@@ -212,12 +246,13 @@ export async function runModernizer(options: RunOptions): Promise<RunSummary> {
         usage: result.usage,
         ...(result.bugs.length === 0 ? {} : { bugs: result.bugs }),
       });
-      log(`✗ ${file} — ${firstLine(result.reason)}`);
+      log(`✗ ${file} ${cost(result.usage)} — ${firstLine(result.reason)}`);
       if (config.retry.onFail === 'stop') {
         control.stopped = true;
       }
       return 'failed';
     } finally {
+      progress({ kind: 'file-end', file });
       free.push(worktree);
     }
   };

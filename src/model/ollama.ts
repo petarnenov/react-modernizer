@@ -7,6 +7,7 @@ import {
   type ToolRunRequest,
   type ToolRunResult,
 } from './client.js';
+import { optionalDetail } from './anthropic.js';
 import { systemClock, type Clock, type RateLimiter } from './rate-limit.js';
 import type { UsageMeter } from './usage.js';
 
@@ -175,7 +176,8 @@ export class OllamaModelClient implements ModelClient {
     let last: ChatResponse | undefined;
     for (let turn = 0; turn < request.maxIterations; turn++) {
       meter.assertWithinBudget();
-      await this.limiter.acquire();
+      await this.limiter.acquire((ms) => request.progress?.({ kind: 'rate-wait', ms }));
+      request.progress?.({ kind: 'model-turn', turn: turn + 1 });
       last = (await this.request('/api/chat', {
         model: request.model,
         messages,
@@ -197,7 +199,7 @@ export class OllamaModelClient implements ModelClient {
         messages.push({
           role: 'tool',
           tool_name: call.function.name,
-          content: await runCall(byName.get(call.function.name), call),
+          content: await runCall(byName.get(call.function.name), call, request.progress),
         });
       }
     }
@@ -215,7 +217,11 @@ function parametersOf(tool: ModelTool<never>): object {
 }
 
 /** Runs one tool call; every failure goes back to the model as text, so it can correct itself. */
-async function runCall(tool: ModelTool<never> | undefined, call: ToolCall): Promise<string> {
+async function runCall(
+  tool: ModelTool<never> | undefined,
+  call: ToolCall,
+  progress: ToolRunRequest['progress'],
+): Promise<string> {
   if (tool === undefined) {
     return `Error: unknown tool ${call.function.name}`;
   }
@@ -231,6 +237,7 @@ async function runCall(tool: ModelTool<never> | undefined, call: ToolCall): Prom
   if (!parsed.success) {
     return `Error: invalid input for ${call.function.name}:\n${z.prettifyError(parsed.error)}`;
   }
+  progress?.({ kind: 'tool-call', tool: tool.name, ...optionalDetail(tool.name, parsed.data) });
   try {
     return await tool.run(parsed.data as never);
   } catch (error) {
