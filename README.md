@@ -78,6 +78,15 @@ to `.git/modernizer/`.
 export ANTHROPIC_API_KEY=sk-ant-...   # or: ant auth login
 ```
 
+Or `gpt-oss:120b` on Ollama Cloud — add `model: { provider: ollama }` to the config and:
+
+```sh
+export OLLAMA_API_KEY=...
+```
+
+It is weaker than Claude at tool use and exact code edits: the gates keep bad edits out, but expect more failed
+attempts in the conversion steps. On the free tier, lower `concurrency.requestsPerMinute` if requests fail with 429.
+
 ### 4. Choose 10–15 files
 
 ```sh

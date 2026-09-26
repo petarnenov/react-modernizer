@@ -48,7 +48,11 @@ describe('parseConfig', () => {
   it('defaults the model, effort and characterize-tests options', () => {
     const config = parseConfig({ target: '.' });
 
-    expect(config.model).toEqual({ default: 'claude-sonnet-5', effort: 'high' });
+    expect(config.model).toMatchObject({
+      provider: 'anthropic',
+      default: 'claude-sonnet-5',
+      effort: 'high',
+    });
     expect(config.steps['characterize-tests']).toMatchObject({
       enabled: true,
       testCommand: '{testRunner} {testFile}',
@@ -104,10 +108,35 @@ describe('parseConfig', () => {
     [{ unknownKey: true }, 'unknownKey'],
     [{ gates: { timeoutSeconds: 0 } }, 'timeoutSeconds'],
     [{ model: { effort: 'extreme' } }, 'effort'],
+    [{ model: { provider: 'openai' } }, 'provider'],
+    [{ model: { provider: 'ollama', apiKey: 'secret' } }, 'apiKey'],
+    [{ model: { baseUrl: 'not a url' } }, 'baseUrl'],
     [{ git: { branch: '' } }, 'branch'],
   ])('rejects %j', (partial, mentioned) => {
     expect(() => parseConfig({ target: '.', ...partial })).toThrow(ConfigError);
     expect(() => parseConfig({ target: '.', ...partial })).toThrow(mentioned);
+  });
+
+  it('defaults Ollama to gpt-oss:120b on Ollama Cloud with the key from OLLAMA_API_KEY', () => {
+    expect(parseConfig({ target: '.', model: { provider: 'ollama' } }).model).toEqual({
+      provider: 'ollama',
+      default: 'gpt-oss:120b',
+      effort: 'high',
+      baseUrl: 'https://ollama.com',
+      apiKeyEnv: 'OLLAMA_API_KEY',
+    });
+  });
+
+  it('keeps a model chosen for Ollama', () => {
+    const config = parseConfig({
+      target: '.',
+      model: { provider: 'ollama', default: 'qwen3-coder:480b', baseUrl: 'http://localhost:11434' },
+    });
+
+    expect(config.model).toMatchObject({
+      default: 'qwen3-coder:480b',
+      baseUrl: 'http://localhost:11434',
+    });
   });
 
   it('requires a target', () => {

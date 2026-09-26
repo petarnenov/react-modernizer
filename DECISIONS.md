@@ -130,3 +130,17 @@
   legacy file with lint errors failed every no-op step and could never be migrated. Changes are gated when they are
   made; the gates-only baseline still gates unchanged files, since that is its purpose.
 - `runCommand` now also returns the exit code.
+
+## 12. Ollama provider (add-ollama-provider, 2026-09-26)
+
+- **`model.provider: ollama`** for `gpt-oss:120b` on Ollama Cloud (the model maf-lab runs on), or any local Ollama.
+  Default stays Anthropic; the default model follows the provider.
+- **Native `/api/chat` over Node's `fetch`, no new package.** Two endpoints do not justify a dependency; the native
+  API carries `think` levels and token counts, which the OpenAI-compatible `/v1` does not.
+- **Own tool loop:** tool input validated with the tool's zod schema (sent as `z.toJSONSchema`), invalid input goes
+  back to the model as a tool error. The assistant turn is sent back with its `thinking`, which gpt-oss continues from.
+  Ollama ignores `tool_choice`; nothing depends on it.
+- **Effort → `think`:** low / medium / high; xhigh and max think at high.
+- **Preflight is `GET /api/tags`:** catches a bad key and an unknown model without spending tokens. A missing key is
+  an error only for a non-loopback `baseUrl`. The key is read from the variable named by `model.apiKeyEnv`.
+- **Retries:** 429, 5xx and network errors twice (2 s, 8 s); 401/403 never; 10-minute timeout per request.

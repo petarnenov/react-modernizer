@@ -15,6 +15,16 @@ export type StepId = (typeof STEP_IDS)[number];
 export const EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max'] as const;
 export type Effort = (typeof EFFORTS)[number];
 
+export const MODEL_PROVIDERS = ['anthropic', 'ollama'] as const;
+export type ModelProvider = (typeof MODEL_PROVIDERS)[number];
+
+const DEFAULT_MODEL: Record<ModelProvider, string> = {
+  anthropic: 'claude-sonnet-5',
+  ollama: 'gpt-oss:120b',
+};
+
+export const DEFAULT_OLLAMA_URL = 'https://ollama.com';
+
 const DEFAULT_INCLUDE = ['src/**/*.{js,jsx}'];
 
 /** A test belongs to the file it tests; it is not a unit of work of its own. */
@@ -181,13 +191,24 @@ export const configSchema = z
       .default({ by: 'directory', maxFiles: 40 }),
     model: z
       .object({
-        /** The model steps use unless a step sets its own. */
-        default: z.string().min(1).default('claude-sonnet-5'),
+        /** Who serves the model. */
+        provider: z.enum(MODEL_PROVIDERS).default('anthropic'),
+        /** The model steps use unless a step sets its own; defaults per provider. */
+        default: z.string().min(1).optional(),
         /** Reasoning effort; adaptive thinking decides how much of it to use. */
         effort: z.enum(EFFORTS).default('high'),
+        /** Ollama server; Ollama Cloud by default, or a local one such as `http://localhost:11434`. */
+        baseUrl: z.url().optional(),
+        /** Environment variable holding the Ollama API key. The key itself never goes in the file. */
+        apiKeyEnv: z.string().min(1).default('OLLAMA_API_KEY'),
       })
       .strict()
-      .prefault({}),
+      .prefault({})
+      .transform(({ default: model, baseUrl, ...rest }) => ({
+        ...rest,
+        default: model ?? DEFAULT_MODEL[rest.provider],
+        baseUrl: baseUrl ?? DEFAULT_OLLAMA_URL,
+      })),
   })
   .strict();
 

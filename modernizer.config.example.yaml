@@ -79,5 +79,9 @@ budget:
 batching: { by: directory, maxFiles: 40 }
 
 model:
-  default: claude-sonnet-5
-  effort: high # low | medium | high | xhigh | max
+  provider: anthropic # anthropic | ollama
+  default: claude-sonnet-5 # with ollama: gpt-oss:120b
+  effort: high # low | medium | high | xhigh | max (ollama: xhigh and max think at high)
+  # Ollama only:
+  # baseUrl: https://ollama.com   # Ollama Cloud; or http://localhost:11434, which needs no key
+  # apiKeyEnv: OLLAMA_API_KEY     # the variable holding the key; the key never goes in this file
