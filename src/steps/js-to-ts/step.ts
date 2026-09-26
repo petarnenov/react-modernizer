@@ -1,15 +1,15 @@
 import { access, readFile, rename } from 'node:fs/promises';
 import { join, posix } from 'node:path';
 import ts from 'typescript';
-import { z } from 'zod';
 import { withTestRunner } from '../../config/commands.js';
 import type { ModernizerConfig } from '../../config/schema.js';
 import { parseSource } from '../../graph/extract.js';
-import { defineTool, type ModelClient } from '../../model/client.js';
-import { runCommand, shellQuote } from '../../run/gates.js';
+import type { ModelClient } from '../../model/client.js';
+import { shellQuote } from '../../run/gates.js';
 import { characterizationTestPath } from '../characterize-tests/paths.js';
 import { exportedValueNames, exportsChanged } from '../class-to-function/analysis.js';
 import { readTools, reportBugTool, runTestsTool, writeOneFileTool } from '../shared/tools.js';
+import { checkTypesTool, typeErrors } from '../shared/typecheck.js';
 import type { Importer, Step } from '../step.js';
 import { typesOnlyDifference } from './erase.js';
 import { buildPrompt, SYSTEM_PROMPT } from './instructions.js';
@@ -51,20 +51,7 @@ export function breakingImporters(importers: readonly Importer[]): Importer[] {
   return importers.filter((i) => /\.jsx?$/.test(i.specifier));
 }
 
-/** Type-check output lines about the given files, with their continuation lines. */
-export function errorsFor(output: string, files: readonly string[]): string {
-  const kept: string[] = [];
-  let keeping = false;
-  for (const line of output.split('\n')) {
-    if (/^\s/.test(line) && line.trim() !== '') {
-      if (keeping) kept.push(line);
-      continue;
-    }
-    keeping = files.some((f) => line.startsWith(f));
-    if (keeping) kept.push(line);
-  }
-  return kept.join('\n').trim();
-}
+export { errorsFor } from '../shared/typecheck.js';
 
 interface Baseline {
   skip?: true;
@@ -82,10 +69,8 @@ export function createJsToTsStep(config: ModernizerConfig, model: ModelClient): 
   const modelName = options.model ?? config.model.default;
   const baselines = new Map<string, Baseline>();
 
-  const typecheck = async (cwd: string, files: readonly string[]): Promise<string> => {
-    const result = await runCommand(options.typecheckCommand, cwd, config.gates.timeoutSeconds);
-    return result.ok ? '' : errorsFor(result.output, files);
-  };
+  const typecheck = (cwd: string, files: readonly string[]): Promise<string> =>
+    typeErrors(options.typecheckCommand, cwd, files, config.gates.timeoutSeconds);
 
   return {
     id: 'js-to-ts',
@@ -182,12 +167,7 @@ export function createJsToTsStep(config: ModernizerConfig, model: ModelClient): 
                     `Write the whole typed ${baseline.test.to}, replacing it. Types only: every test and assertion stays.`,
                   ),
                 ]),
-            defineTool({
-              name: 'check_types',
-              description: `Type-check the project and get the errors in ${files.join(' and ')}. Empty means none.`,
-              inputSchema: z.object({}),
-              run: async () => (await typecheck(ctx.cwd, files)) || 'no type errors in your files',
-            }),
+            checkTypesTool(options.typecheckCommand, ctx.cwd, files, config.gates.timeoutSeconds),
             runTestsTool(
               ctx.cwd,
               withTestRunner(options.testCommand, config.testRunner).replaceAll(

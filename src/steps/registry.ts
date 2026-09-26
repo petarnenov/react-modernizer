@@ -5,6 +5,7 @@ import { RateLimiter } from '../model/rate-limit.js';
 import { createCharacterizeTestsStep } from './characterize-tests/step.js';
 import { createClassToFunctionStep } from './class-to-function/step.js';
 import { createJsToTsStep } from './js-to-ts/step.js';
+import { createSimplifyStep } from './simplify/step.js';
 import type { StepRegistry } from './step.js';
 
 /**
@@ -21,5 +22,6 @@ export function createBuiltInSteps(
     'characterize-tests': createCharacterizeTestsStep(config, model),
     'class-to-function': createClassToFunctionStep(config, model),
     'js-to-ts': createJsToTsStep(config, model),
+    simplify: createSimplifyStep(config, model),
   };
 }

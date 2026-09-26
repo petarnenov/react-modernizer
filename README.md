@@ -14,8 +14,8 @@ Built for large **CRA + Redux + React Router + React Query + Zustand + Jest** co
 [docs/design.md](docs/design.md) for how it works and what is still planned.
 
 > **Status:** early. Configuration, the import graph, `plan`, the run loop (worktrees, gates, commits, resume) and the
-> steps `characterize-tests`, `class-to-function` and `js-to-ts` work. `analyze` and `simplify` are not implemented
-> yet: disable them to run.
+> steps `characterize-tests`, `class-to-function`, `js-to-ts` and `simplify` work. `analyze` is not implemented yet:
+> disable it to run.
 
 ## Usage
 
@@ -104,6 +104,16 @@ will not start.
 - **Nothing breaks:** runtime exports stay the same (new exported types are fine); a file that another file imports
   with an explicit `.js`/`.jsx` extension fails before any model call, naming the importer.
 - Give it your shared types: `steps.js-to-ts.helpers: [src/store/hooks.ts, src/api/types.ts]`.
+
+## Simplifying (`simplify`)
+
+The last step: a model makes the file smaller and clearer with identical behaviour.
+
+- **Measured, not claimed:** code lines and complexity (branches plus nesting), from the syntax tree with comments and
+  formatting ignored. A change is kept only if neither grows and one shrinks. Leaving the file unchanged is fine.
+- **Same surface:** every export, value and type, keeps its name; tests are read-only.
+- **Cost control:** files under `steps.simplify.minLines` (40 code lines) are skipped without a model call.
+- It will not remove `useMemo`/`useCallback`/`memo`, add dependencies, or change state management; bugs are reported.
 
 ## Tests, coverage and protection
 

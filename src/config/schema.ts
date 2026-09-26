@@ -66,7 +66,14 @@ const stepsSchema = z
       })
       .strict()
       .prefault({}),
-    simplify: stepSchema.default({ enabled: true }),
+    simplify: stepSchema
+      .extend({
+        /** Files with fewer code lines (comments and formatting ignored) are not worth a model call. */
+        minLines: z.number().int().min(0).default(40),
+        testCommand: z.string().min(1).default('{testRunner} --findRelatedTests {file}'),
+        typecheckCommand: z.string().min(1).default('npx tsc --noEmit --incremental'),
+      })
+      .prefault({}),
   })
   .strict();
 

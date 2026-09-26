@@ -105,3 +105,16 @@
 - **Importers come from the import graph** (`StepContext.importers`); an explicit `.js`/`.jsx` specifier would break
   on rename, so the file fails first, at no cost.
 - **Requires `tsconfig.json`** in the target; Phase 0 is a person's job.
+
+## 10. simplify (add-simplify-step, 2026-09-26)
+
+- **Simpler is measured:** code lines and complexity (decision points plus deepest nesting) from the syntax tree.
+  Kept only if neither grows and one shrinks; unchanged is a valid outcome, and formatting-only edits are put back so
+  they never reach a commit.
+- **Surface frozen:** all exports, value and type. Tests read-only. Memoisation, dependencies and state management
+  are off limits.
+- **`minLines` (40)** skips small files without a model call.
+- **Normalisation fixed for every step that compares code** (`src/steps/shared/normalize.ts`). The TypeScript printer
+  reproduces line breaks and trailing commas from source positions, so a reflowed file printed differently — which
+  would have given `js-to-ts` false "code changed" failures. Every node and list is now rebuilt without positions and
+  without trailing commas before printing; blocks and object literals always one member per line.

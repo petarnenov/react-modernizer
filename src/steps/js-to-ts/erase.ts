@@ -1,12 +1,5 @@
 import ts from 'typescript';
-import { parseSource } from '../../graph/extract.js';
-
-// One printer for both sides: formatting and comments cannot make a difference.
-const printer = ts.createPrinter({ removeComments: true, newLine: ts.NewLineKind.LineFeed });
-
-function normalize(fileName: string, text: string): string {
-  return printer.printFile(parseSource(fileName, text));
-}
+import { normalize } from '../shared/normalize.js';
 
 /**
  * TypeScript with its types erased. `verbatimModuleSyntax` keeps every import that is not `import type` — without

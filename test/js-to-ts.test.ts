@@ -156,6 +156,16 @@ describe('typesOnlyDifference', () => {
     expect(compare(TS)).toBeUndefined();
   });
 
+  it('ignores how blocks and objects are laid out', () => {
+    const js = 'export const f = (a) => { if (a) { return { x: 1, y: 2 }; } return null; };';
+    const ts =
+      'export const f = (a: boolean) => {\n  if (a) {\n    return {\n      x: 1,\n      y: 2,\n    };\n  }\n  return null;\n};\n';
+
+    expect(
+      typesOnlyDifference({ fileName: 'f.js', text: js }, { fileName: 'f.ts', text: ts }),
+    ).toBeUndefined();
+  });
+
   it('rejects a guard added for the compiler, showing it', () => {
     const difference = compare(
       TS.replace('  const [open', '  if (!title) return null;\n  const [open'),
