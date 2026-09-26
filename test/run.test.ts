@@ -415,7 +415,7 @@ describe('run and status commands', () => {
     const result = await run(['run', config]);
 
     expect(result.code).toBe(1);
-    expect(result.stderr).toContain('not implemented yet: analyze, js-to-ts, simplify');
+    expect(result.stderr).toContain('not implemented yet: analyze, simplify');
   });
 
   it('refuses a target outside any repository', async () => {

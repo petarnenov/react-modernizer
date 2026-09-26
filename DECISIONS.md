@@ -90,3 +90,18 @@
   command, bug reports — one implementation for every model step.
 - **Known gap:** a class that extends a project base class (`class X extends BaseComponent`) is not detected and is
   left as it is.
+
+## 9. js-to-ts (add-js-to-ts-step, 2026-09-26)
+
+- **No ts-migrate.** It makes code compile by inserting `any` and `@ts-expect-error`, exactly what the gates forbid.
+  The `codemod` option, planned but never implemented, is removed; `@ts-expect-error` joins the forbidden defaults.
+- **Types-only proof:** the TypeScript is transpiled with types erased (`verbatimModuleSyntax`, so no import is
+  dropped) and compared with the original after both are printed by one TypeScript printer without comments. Every
+  line is covered, not just the lines the tests reach. A file that cannot be typed without changing code fails, for
+  a person to decide.
+- **The rename is code, not the model:** `.tsx` when the file contains JSX, `.ts` otherwise; the characterization
+  test file by the same rule.
+- **Value exports must stay; type exports may be added.**
+- **Importers come from the import graph** (`StepContext.importers`); an explicit `.js`/`.jsx` specifier would break
+  on rename, so the file fails first, at no cost.
+- **Requires `tsconfig.json`** in the target; Phase 0 is a person's job.

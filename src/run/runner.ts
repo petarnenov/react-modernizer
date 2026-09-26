@@ -1,10 +1,11 @@
+import { access } from 'node:fs/promises';
 import { join } from 'node:path';
 import { withTestRunner } from '../config/commands.js';
 import { ConfigError } from '../config/load.js';
 import { STEP_IDS, type ModernizerConfig, type StepId } from '../config/schema.js';
 import { buildGraph } from '../graph/build.js';
 import { runPool, Scheduler, type Outcome } from '../orchestrator/scheduler.js';
-import type { Step, StepRegistry } from '../steps/step.js';
+import type { Importer, Step, StepRegistry } from '../steps/step.js';
 import { Semaphore } from './gates.js';
 import { git, openRepository } from './git.js';
 import { deleteState, emptyState, loadState, StateStore } from './state.js';
@@ -65,6 +66,13 @@ export function resolveSteps(config: ModernizerConfig, registry: StepRegistry): 
   return enabled.flatMap((id) => registry[id] ?? []);
 }
 
+async function exists(path: string): Promise<boolean> {
+  return access(path).then(
+    () => true,
+    () => false,
+  );
+}
+
 function firstLine(text: string): string {
   return text.split('\n').find((l) => l.trim() !== '') ?? text;
 }
@@ -77,6 +85,12 @@ export function statePath(runDir: string): string {
 export async function runModernizer(options: RunOptions): Promise<RunSummary> {
   const { config, log } = options;
   const steps = resolveSteps(config, options.steps);
+  if (config.steps['js-to-ts'].enabled && !(await exists(join(config.target, 'tsconfig.json')))) {
+    throw new ConfigError(
+      'js-to-ts is enabled but the target has no tsconfig.json. Make the project ready for TypeScript first ' +
+        '(allowJs, strict — see "Phase 0" in docs/design.md), or disable js-to-ts.',
+    );
+  }
   const graph = await buildGraph(config.target, config.source);
   // Before any file: a step that cannot work (no credentials, unreachable model) stops the run here.
   for (const step of steps) {
@@ -103,6 +117,16 @@ export async function runModernizer(options: RunOptions): Promise<RunSummary> {
 
   const branch = new RunBranch(repo, config.git.branch);
   const tip = await branch.ensure(config.git.base);
+
+  // Who imports whom, for steps that must not break importers.
+  const importers = new Map<string, Importer[]>();
+  for (const [file, imports] of graph.imports) {
+    for (const i of imports) {
+      if (i.kind === 'internal' && i.path !== undefined) {
+        importers.set(i.path, [...(importers.get(i.path) ?? []), { file, specifier: i.specifier }]);
+      }
+    }
+  }
 
   const scheduler = new Scheduler(graph.edges);
   let resumed = 0;
@@ -152,6 +176,7 @@ export async function runModernizer(options: RunOptions): Promise<RunSummary> {
         },
         retries: config.retry.perStep,
         tokenBudget: config.budget.maxTokensPerFile,
+        importers: importers.get(file) ?? [],
       });
       let commit: string | undefined;
       if (result.status === 'done' && result.commit !== undefined) {

@@ -10,7 +10,8 @@ types erased against the original — so the codebase becomes typed without any 
 ### Requirement: What is renamed
 
 For a JavaScript file `<Name>.js` or `<Name>.jsx`, the step SHALL rename it to `<Name>.tsx` when it contains JSX and
-to `<Name>.ts` otherwise, and SHALL rename its characterization test file the same way. The step SHALL change no
+to `<Name>.ts` otherwise, and SHALL rename its characterization test file by the same rule, according to whether
+the test file contains JSX. The step SHALL change no
 other file. A file that is already TypeScript SHALL pass the step with no model call.
 
 #### Scenario: Component

@@ -8,6 +8,12 @@ export interface BugReport {
   reason: string;
 }
 
+/** A file that imports the one being processed, and how it names it. */
+export interface Importer {
+  file: string;
+  specifier: string;
+}
+
 export interface StepContext {
   /** The file being processed, relative to the target. */
   file: string;
@@ -19,6 +25,8 @@ export interface StepContext {
   previousFailure?: string;
   /** The file's token meter, shared by every step and attempt; enforces the per-file budget. */
   usage: UsageMeter;
+  /** Processed files that import this one (from the import graph). */
+  importers: readonly Importer[];
   report(bug: BugReport): void;
 }
 

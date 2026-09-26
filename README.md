@@ -14,8 +14,8 @@ Built for large **CRA + Redux + React Router + React Query + Zustand + Jest** co
 [docs/design.md](docs/design.md) for how it works and what is still planned.
 
 > **Status:** early. Configuration, the import graph, `plan`, the run loop (worktrees, gates, commits, resume) and the
-> first two steps, `characterize-tests` and `class-to-function`, work. `analyze`, `js-to-ts` and `simplify` are not
-> implemented yet: disable them to run.
+> steps `characterize-tests`, `class-to-function` and `js-to-ts` work. `analyze` and `simplify` are not implemented
+> yet: disable them to run.
 
 ## Usage
 
@@ -91,6 +91,19 @@ steps:
   simplify: { enabled: false }
   # characterize-tests and class-to-function are on by default
 ```
+
+## Moving to TypeScript (`js-to-ts`)
+
+Runs after `class-to-function`. It renames the file (`.tsx` with JSX, `.ts` without) and its characterization tests,
+then a model adds types. It needs a `tsconfig.json` in the target (Phase 0 in docs/design.md): without one, the run
+will not start.
+
+- **Types only, proven:** the result is compiled back to JavaScript with types erased and compared with the original.
+  Any change to the code — a guard added for the compiler, an `enum` — fails the attempt, with the lines shown.
+- **Strict:** no `any`, `@ts-ignore`, `@ts-expect-error` or `@ts-nocheck`; type errors in the file fail the attempt.
+- **Nothing breaks:** runtime exports stay the same (new exported types are fine); a file that another file imports
+  with an explicit `.js`/`.jsx` extension fails before any model call, naming the importer.
+- Give it your shared types: `steps.js-to-ts.helpers: [src/store/hooks.ts, src/api/types.ts]`.
 
 ## Tests, coverage and protection
 

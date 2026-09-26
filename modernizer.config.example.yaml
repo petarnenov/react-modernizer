@@ -27,7 +27,11 @@ steps:
     # model: claude-opus-5    # a step can use another model than model.default
   class-to-function: { enabled: true, skip: [error-boundary] }
   redux-connect-to-hooks: { enabled: false } # a separate decision
-  js-to-ts: { enabled: true, codemod: ts-migrate }
+  js-to-ts: # needs a tsconfig.json in the target (Phase 0)
+    enabled: true
+    typecheckCommand: npx tsc --noEmit --incremental
+    testCommand: '{testRunner} --findRelatedTests {file}'
+    helpers: [] # e.g. [src/store/hooks.ts] — typed useAppSelector / useAppDispatch
   simplify: { enabled: true }
 
 gates:
@@ -36,7 +40,16 @@ gates:
     - npx tsc --noEmit --incremental
     - '{testRunner} --findRelatedTests {files}'
   coverage: { min: 80 }
-  forbid: [': any', 'as any', '@ts-ignore', '@ts-nocheck', 'eslint-disable', 'toMatchSnapshot']
+  forbid:
+    [
+      ': any',
+      'as any',
+      '@ts-ignore',
+      '@ts-nocheck',
+      '@ts-expect-error',
+      'eslint-disable',
+      'toMatchSnapshot',
+    ]
   protectTestsFrom: characterize-tests
   timeoutSeconds: 600 # per gate command
 

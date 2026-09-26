@@ -56,8 +56,16 @@ const stepsSchema = z
     // Changes how components are wired and tested — a separate decision, off unless asked for.
     'redux-connect-to-hooks': stepSchema.default({ enabled: false }),
     'js-to-ts': stepSchema
-      .extend({ codemod: z.enum(['none', 'ts-migrate']).default('ts-migrate') })
-      .default({ enabled: true, codemod: 'ts-migrate' }),
+      .extend({
+        /** Type-checks the project; the step's model sees the errors in its two files. */
+        typecheckCommand: z.string().min(1).default('npx tsc --noEmit --incremental'),
+        /** What the step's model runs: the tests related to the file. */
+        testCommand: z.string().min(1).default('{testRunner} --findRelatedTests {file}'),
+        /** Files with shared types to use rather than re-declare, e.g. typed Redux hooks. */
+        helpers: z.array(z.string().min(1)).default([]),
+      })
+      .strict()
+      .prefault({}),
     simplify: stepSchema.default({ enabled: true }),
   })
   .strict();
@@ -104,6 +112,7 @@ export const configSchema = z
             'as any',
             '@ts-ignore',
             '@ts-nocheck',
+            '@ts-expect-error',
             'eslint-disable',
             'toMatchSnapshot',
           ]),

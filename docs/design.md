@@ -15,8 +15,9 @@ the type checker and the tests pass. It is built for large codebases (thousands 
    gates, git. The model is called for one step on one file with a narrow context.
 4. **Gates check the diff, not just the exit code.** A model that cannot make a check pass will sometimes weaken the
    check instead. See [Gates](#gates).
-5. **Codemods where mechanical, model where judgement.** `ts-migrate`, `react-codemod` and ts-morph do what can be done
-   without understanding; the model does the rest.
+5. **Code where mechanical, model where judgement.** Detection, renames and every check are code (the TypeScript
+   parser and compiler); the model does only what needs understanding. No codemod that inserts `any` or
+   `@ts-expect-error` — `ts-migrate` was considered and rejected for that reason.
 6. **One worker by default.** Concurrency is a setting, not a mode — the same code runs one worker or many.
 
 ## Pipeline per file
@@ -121,7 +122,8 @@ Behaviour that exists is specified in `openspec/specs/`; planned parts become Op
 | Model access: credentials, rate, token budget | done    |
 | Step: characterize-tests                      | done    |
 | Step: class-to-function                       | done    |
-| Steps: analyze, JS→TS, simplify               | planned |
+| Step: js-to-ts                                | done    |
+| Steps: analyze, simplify                      | planned |
 | Gates: commands, timeout, forbidden patterns  | done    |
 | Gates: coverage, test protection              | done    |
 | Reports and PR batching                       | planned |

@@ -2,7 +2,7 @@ import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { StepId } from '../config/schema.js';
 import { UsageMeter, type UsageTotals } from '../model/usage.js';
-import type { BugReport, Step } from '../steps/step.js';
+import type { BugReport, Importer, Step } from '../steps/step.js';
 import { coverageGate } from './coverage.js';
 import { findForbidden, runGateCommands, type GateResult, type Semaphore } from './gates.js';
 import { countTests, weakening, type TestCounts } from './protection.js';
@@ -33,6 +33,8 @@ export interface FileJob {
   retries: number;
   /** Tokens the file's steps may use in total (`budget.maxTokensPerFile`). */
   tokenBudget?: number;
+  /** Processed files that import this one. */
+  importers?: readonly Importer[];
 }
 
 interface Findings {
@@ -196,6 +198,7 @@ export async function processFile(job: FileJob): Promise<FileResult> {
           cwd: job.worktree.cwd,
           attempt,
           usage: meter,
+          importers: job.importers ?? [],
           report: (bug) => bugs.push(bug),
           ...(previousFailure === undefined ? {} : { previousFailure }),
         });

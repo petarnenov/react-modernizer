@@ -59,35 +59,46 @@ export function findClassComponents(fileName: string, text: string): ClassCompon
   return found;
 }
 
-/** Names a file exports: `default`, named exports, and `* from '…'` for re-export-alls. */
-export function exportedNames(fileName: string, text: string): string[] {
+export interface ExportedName {
+  name: string;
+  /** Types and interfaces are erased at runtime; adding one breaks no importer. */
+  kind: 'value' | 'type';
+}
+
+/** What a file exports: `default`, named exports, and `* from '…'` for re-export-alls, each a value or a type. */
+export function exports(fileName: string, text: string): ExportedName[] {
   const source = parseSource(fileName, text);
-  const names = new Set<string>();
-  const isExported = (node: ts.Node): boolean =>
-    ts.canHaveModifiers(node) &&
-    (ts.getModifiers(node) ?? []).some((m) => m.kind === ts.SyntaxKind.ExportKeyword);
-  const isDefault = (node: ts.Node): boolean =>
-    ts.canHaveModifiers(node) &&
-    (ts.getModifiers(node) ?? []).some((m) => m.kind === ts.SyntaxKind.DefaultKeyword);
+  const found = new Map<string, ExportedName['kind']>();
+  const add = (name: string, kind: ExportedName['kind']): void => {
+    if (found.get(name) !== 'value') found.set(name, kind);
+  };
+  const modifiers = (node: ts.Node): readonly ts.ModifierLike[] =>
+    ts.canHaveModifiers(node) ? (ts.getModifiers(node) ?? []) : [];
+  const has = (node: ts.Node, kind: ts.SyntaxKind): boolean =>
+    modifiers(node).some((m) => m.kind === kind);
 
   for (const statement of source.statements) {
     if (ts.isExportAssignment(statement)) {
-      names.add('default');
+      add('default', 'value');
     } else if (ts.isExportDeclaration(statement)) {
+      const kind = statement.isTypeOnly ? 'type' : 'value';
       if (statement.exportClause === undefined) {
         const from = statement.moduleSpecifier;
-        names.add(`* from '${from !== undefined && ts.isStringLiteral(from) ? from.text : '?'}'`);
+        add(`* from '${from !== undefined && ts.isStringLiteral(from) ? from.text : '?'}'`, kind);
       } else if (ts.isNamedExports(statement.exportClause)) {
-        for (const element of statement.exportClause.elements) names.add(element.name.text);
+        for (const element of statement.exportClause.elements) {
+          add(element.name.text, element.isTypeOnly ? 'type' : kind);
+        }
       } else {
-        names.add(statement.exportClause.name.text); // export * as ns from '…'
+        add(statement.exportClause.name.text, kind); // export * as ns from '…'
       }
-    } else if (isExported(statement)) {
-      if (isDefault(statement)) {
-        names.add('default');
+    } else if (has(statement, ts.SyntaxKind.ExportKeyword)) {
+      const typeOnly = ts.isInterfaceDeclaration(statement) || ts.isTypeAliasDeclaration(statement);
+      if (has(statement, ts.SyntaxKind.DefaultKeyword)) {
+        add('default', typeOnly ? 'type' : 'value');
       } else if (ts.isVariableStatement(statement)) {
         for (const declaration of statement.declarationList.declarations) {
-          if (ts.isIdentifier(declaration.name)) names.add(declaration.name.text);
+          if (ts.isIdentifier(declaration.name)) add(declaration.name.text, 'value');
         }
       } else if (
         (ts.isFunctionDeclaration(statement) ||
@@ -97,11 +108,25 @@ export function exportedNames(fileName: string, text: string): string[] {
           ts.isTypeAliasDeclaration(statement)) &&
         statement.name !== undefined
       ) {
-        names.add(statement.name.text);
+        add(statement.name.text, typeOnly ? 'type' : 'value');
       }
     }
   }
-  return [...names].sort();
+  return [...found]
+    .map(([name, kind]) => ({ name, kind }))
+    .sort((a, b) => (a.name < b.name ? -1 : 1));
+}
+
+/** Every exported name, values and types alike, sorted. */
+export function exportedNames(fileName: string, text: string): string[] {
+  return exports(fileName, text).map((e) => e.name);
+}
+
+/** Only the names that exist at runtime — what importers actually depend on. */
+export function exportedValueNames(fileName: string, text: string): string[] {
+  return exports(fileName, text)
+    .filter((e) => e.kind === 'value')
+    .map((e) => e.name);
 }
 
 /** What changed between two export lists, or undefined when they are the same. */
