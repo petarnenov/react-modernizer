@@ -272,6 +272,8 @@ export async function processFile(job: FileJob): Promise<FileResult> {
     const file = pipeline.current;
     const producing = step.producesTests?.(file) ?? [];
     let previousFailure: string | undefined;
+    // Kept apart: a later error (the budget, a crash) must not hide what the gates still rejected.
+    let lastGateFailure: string | undefined;
     let passed = false;
     // Staged here, so unstaged changes after the step are exactly what the step did.
     await job.worktree.stage();
@@ -316,6 +318,7 @@ export async function processFile(job: FileJob): Promise<FileResult> {
           changed = true;
         } else {
           previousFailure = describe(result);
+          lastGateFailure = previousFailure;
         }
       } catch (error) {
         const outside = await outsideAllowed(job, step, file);
@@ -329,7 +332,11 @@ export async function processFile(job: FileJob): Promise<FileResult> {
       return {
         status: 'failed',
         attempts,
-        reason: `${step.id}: ${previousFailure ?? 'failed'}`,
+        reason:
+          `${step.id}: ${previousFailure ?? 'failed'}` +
+          (lastGateFailure !== undefined && lastGateFailure !== previousFailure
+            ? `\n\nlast gate failure:\n${lastGateFailure}`
+            : ''),
         ...findings(),
       };
     }

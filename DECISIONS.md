@@ -191,3 +191,16 @@
   there. **Gates leave nothing behind:** after the gates, unstaged changes are put back.
 - The `analyze` step's default `lintCommand` still says `--format unix`; on ESLint 9 its evidence is the "formatter
   removed" message. Not changed here (a separate spec).
+
+## 17. Focused model context (focus-model-context, 2026-09-27)
+
+- **Found in the full pilot:** `js-to-ts` spent 460k tokens after the tsc gate rightly reported new errors in two
+  TypeScript importers: the model neither knew them nor that it could only change its own types.
+- **Importers from the whole project** (`src/graph/importers.ts`): every code file under the include patterns' top
+  directories, read with `ts.preProcessFile` (8,000 files in under a second), resolved with the graph's resolver. The
+  scheduling graph stays limited to included files.
+- **js-to-ts prompt:** importers listed (20 + count); rule: other files cannot change, fit your types to them, read
+  only around reported errors; a retry names the other files the errors are in.
+- **Ollama compaction:** tool results older than the last two turns are sent as a one-line note; the model's own
+  messages (with `thinking`) are sent unchanged. Anthropic is untouched: caching already makes resent context cheap.
+- **Reasons keep the last gate failure** when a later error (the budget) ends the attempts.

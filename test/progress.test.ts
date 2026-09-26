@@ -91,6 +91,7 @@ describe('a run reports its progress', () => {
       'phase',
       'phase',
       'phase',
+      'phase',
       'file-start',
       'step-start',
       'model-turn',
@@ -104,16 +105,17 @@ describe('a run reports its progress', () => {
       'scanning source and building the import graph',
       'import graph: 1 files, 0 internal imports',
       'checking model access: claude-sonnet-5 (Anthropic)',
+      'indexing importers across the project',
       'preparing 1 worktree',
     ]);
-    expect(events[4]).toEqual({ kind: 'file-start', file: 'src/api.js', index: 1, total: 1 });
-    expect(events[7]).toEqual({
+    expect(events[5]).toEqual({ kind: 'file-start', file: 'src/api.js', index: 1, total: 1 });
+    expect(events[8]).toEqual({
       kind: 'tool-call',
       tool: 'read_file',
       detail: 'src/api.js',
       file: 'src/api.js',
     });
-    expect(events[9]).toMatchObject({ kind: 'gate-end', command: 'true', ok: true });
+    expect(events[10]).toMatchObject({ kind: 'gate-end', command: 'true', ok: true });
     expect(lines[0]).toMatch(/^✓ src\/api\.js [0-9a-f]{7} \(\d+\.\ds · 0 tokens\)$/);
   });
 

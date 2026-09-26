@@ -4,12 +4,13 @@ import { countErrors, parseErrors, totalErrors, type ErrorCounts } from './basel
 import type { GateCommand } from '../config/schema.js';
 import { formatDuration, formatTokens, type ProgressEvent } from './progress.js';
 import { dirname, join } from 'node:path';
+import { indexImporters } from '../graph/importers.js';
 import { withTestRunner } from '../config/commands.js';
 import { ConfigError } from '../config/load.js';
 import { STEP_IDS, type ModernizerConfig, type StepId } from '../config/schema.js';
 import { buildGraph } from '../graph/build.js';
 import { runPool, Scheduler, type Outcome } from '../orchestrator/scheduler.js';
-import type { Importer, Step, StepRegistry } from '../steps/step.js';
+import type { Step, StepRegistry } from '../steps/step.js';
 import { expandCommand, runCommand, Semaphore } from './gates.js';
 import { git, openRepository } from './git.js';
 import { deleteState, emptyState, loadState, StateStore } from './state.js';
@@ -182,15 +183,10 @@ export async function runModernizer(options: RunOptions): Promise<RunSummary> {
   const branch = new RunBranch(repo, config.git.branch);
   const tip = await branch.ensure(config.git.base);
 
-  // Who imports whom, for steps that must not break importers.
-  const importers = new Map<string, Importer[]>();
-  for (const [file, imports] of graph.imports) {
-    for (const i of imports) {
-      if (i.kind === 'internal' && i.path !== undefined) {
-        importers.set(i.path, [...(importers.get(i.path) ?? []), { file, specifier: i.specifier }]);
-      }
-    }
-  }
+  // Who imports whom, across the whole project: most importers of a JavaScript file are files the run never
+  // processes.
+  phase('indexing importers across the project');
+  const importers = await indexImporters(config.target, config.source);
 
   const scheduler = new Scheduler(graph.edges);
   let resumed = 0;

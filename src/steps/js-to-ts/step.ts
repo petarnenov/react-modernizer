@@ -149,6 +149,7 @@ export function createJsToTsStep(config: ModernizerConfig, model: ModelClient): 
             from: baseline.from,
             file: baseline.to,
             helpers: options.helpers,
+            importers: [...new Set(ctx.importers.map((i) => i.file))].sort(),
             ...(baseline.test === undefined
               ? {}
               : { testFrom: baseline.test.from, testFile: baseline.test.to }),

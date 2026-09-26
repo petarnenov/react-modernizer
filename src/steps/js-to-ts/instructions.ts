@@ -12,6 +12,11 @@ Typing rules (strict TypeScript, current industry practice):
 - In the tests, type what the tests need (mocks, fixtures, rendered props) without changing what they do or assert.
 - Do not fix bugs. If something looks wrong, call report_bug with the line and your reasoning.
 
+Files that import yours:
+- They are listed in the task. You cannot change them. Their code is right as it is; your types must fit how they use your module.
+- A type error reported in one of them means your types are narrower than, or different from, what that file passes or expects. Adjust your own types to fit it: accept the types callers pass, make optional what some callers omit, return what they rely on. Never narrow a type a caller depends on.
+- To see what a caller does, read the lines around the reported error in that file; do not explore the rest of the project.
+
 How to work:
 - Read the file, its tests, the files it imports and the helpers you are given.
 - Write the whole typed file with write_file (and the tests with write_test_file), then run check_types until your files have no errors and run_tests until PASSED.
@@ -24,7 +29,21 @@ export interface PromptInput {
   testFrom?: string;
   testFile?: string;
   helpers: readonly string[];
+  /** Files that import this one, anywhere in the project. */
+  importers?: readonly string[];
   previousFailure?: string;
+}
+
+const IMPORTERS_SHOWN = 20;
+
+/** Paths of files the failure reports errors in, other than the step's own. */
+function othersIn(failure: string, own: readonly string[]): string[] {
+  const found = new Set<string>();
+  for (const m of failure.matchAll(/^([^\s(:]+\.[cm]?[jt]sx?)[(:]/gm)) {
+    const path = m[1] ?? '';
+    if (!own.includes(path)) found.add(path);
+  }
+  return [...found];
 }
 
 /** The per-file task. */
@@ -36,12 +55,30 @@ export function buildPrompt(input: PromptInput): string {
   if (input.helpers.length > 0) {
     lines.push(`Shared types and typed helpers to use: ${input.helpers.join(', ')}`);
   }
+  const importers = input.importers ?? [];
+  if (importers.length > 0) {
+    const more = importers.length - IMPORTERS_SHOWN;
+    lines.push(
+      `Imported by (you cannot change these; your types must fit them): ${importers.slice(0, IMPORTERS_SHOWN).join(', ')}` +
+        (more > 0 ? ` and ${String(more)} more` : ''),
+    );
+  }
   if (input.previousFailure !== undefined) {
     lines.push(
       '',
       'A previous attempt was rejected. The files you wrote then are still there; fix them:',
       input.previousFailure,
     );
+    const others = othersIn(input.previousFailure, [
+      input.file,
+      ...(input.testFile === undefined ? [] : [input.testFile]),
+    ]);
+    if (others.length > 0) {
+      lines.push(
+        '',
+        `Errors are reported in files you cannot change (${others.join(', ')}): adjust your own types so they fit how those files use them.`,
+      );
+    }
   }
   return lines.join('\n');
 }

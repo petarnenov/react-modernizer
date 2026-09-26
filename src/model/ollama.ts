@@ -9,6 +9,7 @@ import {
   type ToolRunRequest,
   type ToolRunResult,
 } from './client.js';
+import { toolDetail } from '../run/progress.js';
 import { optionalDetail } from './anthropic.js';
 import { systemClock, type Clock, type RateLimiter } from './rate-limit.js';
 import type { UsageMeter } from './usage.js';
@@ -34,6 +35,41 @@ interface ChatMessage {
   thinking?: string;
   tool_calls?: ToolCall[];
   tool_name?: string;
+}
+
+/** A tool result as kept locally: the turn that produced it, and what to send once it is old. */
+interface ToolMessage extends ChatMessage {
+  turn: number;
+  note: string;
+}
+
+/** How many of the latest turns keep their tool results in full. */
+const FULL_RESULT_TURNS = 2;
+
+/**
+ * What is sent on request `turn`: tool results from the last two turns in full, older ones as a one-line note.
+ * Everything else — prompts, the model's own messages — is sent as it was, so the conversation stays well-formed.
+ * Without this, every earlier file read and test run is sent again on every turn.
+ */
+export function compact(
+  messages: readonly (ChatMessage | ToolMessage)[],
+  turn: number,
+): ChatMessage[] {
+  return messages.map((m) => {
+    if (!('turn' in m)) return m;
+    const { turn: produced, note, ...message } = m;
+    return produced < turn - FULL_RESULT_TURNS ? { ...message, content: note } : message;
+  });
+}
+
+function argumentsOf(call: ToolCall): unknown {
+  const input = call.function.arguments;
+  if (typeof input !== 'string') return input;
+  try {
+    return JSON.parse(input) as unknown;
+  } catch {
+    return undefined;
+  }
 }
 
 interface ChatResponse {
@@ -190,7 +226,7 @@ export class OllamaModelClient implements ModelClient {
         parameters: parametersOf(tool),
       },
     }));
-    const messages: ChatMessage[] = [
+    const messages: (ChatMessage | ToolMessage)[] = [
       { role: 'system', content: request.system },
       { role: 'user', content: request.prompt },
     ];
@@ -202,7 +238,7 @@ export class OllamaModelClient implements ModelClient {
       request.progress?.({ kind: 'model-turn', turn: turn + 1 });
       last = (await this.request('/api/chat', {
         model: request.model,
-        messages,
+        messages: compact(messages, turn),
         tools,
         stream: false,
         think: thinkLevel(request.effort),
@@ -218,10 +254,13 @@ export class OllamaModelClient implements ModelClient {
         break;
       }
       for (const call of calls) {
+        const detail = toolDetail(call.function.name, argumentsOf(call));
         messages.push({
           role: 'tool',
           tool_name: call.function.name,
           content: await runCall(byName.get(call.function.name), call, request.progress),
+          turn,
+          note: `[earlier result of ${call.function.name}${detail === undefined ? '' : ` ${detail}`} omitted — call it again if you need it]`,
         });
       }
     }

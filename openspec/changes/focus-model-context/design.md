@@ -10,9 +10,9 @@ error replaces it.
 ## Decisions
 
 - **Reverse import index** (`src/graph/importers.ts`): discover every code file (`.js .jsx .ts .tsx`, not `.d.ts`,
-  not `node_modules`) under the directories of `source.include` patterns (`src/` here). Parse them with the existing
-  `parseFiles`, resolve with the existing resolver, and invert. It is built once per run, after the graph. On 8,000
-  files this is a few seconds, since `parseFiles` only scans imports. The runner's `importers` map comes from it; the
+  not `node_modules`) under the directories of `source.include` patterns (`src/` here). Read their import and
+  require specifiers with `ts.preProcessFile` (TypeScript's scanner, no full parse), resolve with the existing
+  resolver, and invert. It is built once per run, after the graph. Measured: 8,000 files in under a second. The runner's `importers` map comes from it; the
   graph (scheduling) stays limited to included files.
 - **Prompt:** `buildPrompt` gains `importers` (paths). The system prompt gains the "fitting the importers" rule. The
   retry block adds one line when the failure names files other than the step's two: "These errors are in files you
