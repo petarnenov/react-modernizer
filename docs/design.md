@@ -124,7 +124,7 @@ Behaviour that exists is specified in `openspec/specs/`; planned parts become Op
 | Step: class-to-function                       | done    |
 | Step: js-to-ts                                | done    |
 | Step: simplify                                | done    |
-| Step: analyze                                 | planned |
+| Step: analyze                                 | done    |
 | Gates: commands, timeout, forbidden patterns  | done    |
 | Gates: coverage, test protection              | done    |
 | Reports and PR batching                       | planned |

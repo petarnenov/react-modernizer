@@ -18,3 +18,21 @@ total tokens used by the run and the number of reported bugs per severity, and l
 
 - **WHEN** `analyze` reported a high finding in `src/Cart.jsx` and a low one in `src/List.jsx`, and `class-to-function` reported an unrated one
 - **THEN** `status` lists the high finding first, then the low one, then the unrated one, each naming its step
+
+## ADDED Requirements
+
+### Requirement: A step that changes nothing is not gated
+
+When a step leaves every file as it was, its attempt SHALL pass without running the gates: the gates judge changes,
+and an unchanged file is not a change. Pre-existing problems in a file SHALL NOT fail a step that did not touch it.
+With every step disabled, the gates SHALL still run on each file, as a baseline.
+
+#### Scenario: Legacy lint errors
+
+- **WHEN** a file already fails the lint gate and `analyze` changes nothing
+- **THEN** the step passes and the file goes on to the next step
+
+#### Scenario: Baseline run
+
+- **WHEN** every step is disabled
+- **THEN** the gates run on each unchanged file

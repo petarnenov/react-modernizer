@@ -35,7 +35,14 @@ const stepSchema = z
 
 const stepsSchema = z
   .object({
-    analyze: stepSchema.default({ enabled: true }),
+    analyze: stepSchema
+      .extend({
+        /** Its output for the file is evidence for the model; `{file}` is the file. */
+        lintCommand: z.string().min(1).default('npx eslint --format unix {file}'),
+        /** Files with fewer code lines are not analysed; 0 analyses every file. */
+        minLines: z.number().int().min(0).default(0),
+      })
+      .prefault({}),
     'characterize-tests': stepSchema
       .extend({
         /** What the step's model runs to execute its tests; `{testFile}` is the characterization test file. */

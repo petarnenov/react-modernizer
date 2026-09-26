@@ -190,6 +190,7 @@ export async function processFile(job: FileJob): Promise<FileResult> {
     let passed = false;
     // Staged here, so unstaged changes after the step are exactly what the step did.
     await job.worktree.stage();
+    const before = await job.worktree.stagedTree();
     for (let attempt = 0; attempt <= job.retries && !passed && !meter.exhausted; attempt++) {
       attempts++;
       try {
@@ -199,12 +200,20 @@ export async function processFile(job: FileJob): Promise<FileResult> {
           attempt,
           usage: meter,
           importers: job.importers ?? [],
-          report: (bug) => bugs.push(bug),
+          // Stamped here, so a step cannot report under another step's name.
+          report: (bug) => bugs.push({ ...bug, step: step.id }),
           ...(previousFailure === undefined ? {} : { previousFailure }),
         });
         const outside = await outsideAllowed(job, step, file);
         if (outside !== undefined) {
           previousFailure = outside;
+          continue;
+        }
+        // The gates judge changes. A step that left everything as it was has nothing to judge, and must not fail
+        // for problems it did not introduce.
+        await job.worktree.stage();
+        if ((await job.worktree.stagedTree()) === before) {
+          passed = true;
           continue;
         }
         const result = await check(job, pipeline, producing);

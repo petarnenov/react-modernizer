@@ -2,6 +2,7 @@ import type { ModernizerConfig } from '../config/schema.js';
 import { AnthropicModelClient } from '../model/anthropic.js';
 import type { ModelClient } from '../model/client.js';
 import { RateLimiter } from '../model/rate-limit.js';
+import { createAnalyzeStep } from './analyze/step.js';
 import { createCharacterizeTestsStep } from './characterize-tests/step.js';
 import { createClassToFunctionStep } from './class-to-function/step.js';
 import { createJsToTsStep } from './js-to-ts/step.js';
@@ -19,6 +20,7 @@ export function createBuiltInSteps(
   ),
 ): StepRegistry {
   return {
+    analyze: createAnalyzeStep(config, model),
     'characterize-tests': createCharacterizeTestsStep(config, model),
     'class-to-function': createClassToFunctionStep(config, model),
     'js-to-ts': createJsToTsStep(config, model),

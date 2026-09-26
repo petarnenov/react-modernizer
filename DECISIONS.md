@@ -118,3 +118,15 @@
   reproduces line breaks and trailing commas from source positions, so a reflowed file printed differently — which
   would have given `js-to-ts` false "code changed" failures. Every node and list is now rebuilt without positions and
   without trailing commas before printing; blocks and object literals always one member per line.
+
+## 11. analyze (add-analyze-step, 2026-09-26)
+
+- **Read-only by construction:** its tools read, list and report; `allowedChanges: []` puts back and fails any change.
+- **Evidence first:** the project's linter output for the file goes into the prompt. A linter that cannot run (shell
+  exit 126/127, npx without the package) is "no evidence", not a failure.
+- **Findings carry severity and the reporting step**, stamped by the run so no step can report under another's name;
+  `status` sorts high → medium → low → unrated.
+- **A step that changes nothing skips the gates.** Found while building analyze: gates ran after every step, so a
+  legacy file with lint errors failed every no-op step and could never be migrated. Changes are gated when they are
+  made; the gates-only baseline still gates unchanged files, since that is its purpose.
+- `runCommand` now also returns the exit code.

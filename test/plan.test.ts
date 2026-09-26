@@ -124,10 +124,10 @@ describe('cli', () => {
     );
   });
 
-  it('refuses run while the default steps are not implemented', async () => {
+  it('refuses run on a target that is not ready for TypeScript', async () => {
     const result = await run('run', await configFor(FIXTURE));
 
     expect(result.code).toBe(1);
-    expect(result.stderr).toContain('not implemented yet');
+    expect(result.stderr).toContain('no tsconfig.json');
   });
 });

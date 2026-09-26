@@ -2,10 +2,17 @@ import type { StepId } from '../config/schema.js';
 import type { UsageMeter } from '../model/usage.js';
 
 /** A suspected bug a step noticed; recorded, never fixed. */
+export const SEVERITIES = ['high', 'medium', 'low'] as const;
+export type Severity = (typeof SEVERITIES)[number];
+
 export interface BugReport {
   /** 1-based line in the file, when the step can point at one. */
   line?: number;
   reason: string;
+  /** high: users can hit it; medium: under specific conditions; low: fragile. Absent when unrated. */
+  severity?: Severity;
+  /** The step that reported it; set by the run, not by the step. */
+  step?: string;
 }
 
 /** A file that imports the one being processed, and how it names it. */

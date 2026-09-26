@@ -19,7 +19,11 @@ source:
 order: dependency-graph # leaves first, so types flow upwards
 
 steps:
-  analyze: { enabled: true } # reports bugs, never fixes them
+  analyze: # reports bugs, never fixes them
+    enabled: true
+    lintCommand: npx eslint --format unix {file} # evidence for the model
+    minLines: 0 # analyse every file
+    # model: claude-haiku-4-5  # a cheaper model just for analysis
   characterize-tests: # pins current behaviour before anything changes
     enabled: true
     testCommand: '{testRunner} {testFile}'

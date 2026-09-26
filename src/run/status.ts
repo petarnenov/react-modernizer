@@ -4,6 +4,13 @@ import { openRepository } from './git.js';
 import { statePath } from './runner.js';
 import { loadState } from './state.js';
 import { runDirectory } from './workspace.js';
+import { SEVERITIES, type BugReport, type Severity } from '../steps/step.js';
+
+const RANKS: readonly Severity[] = SEVERITIES;
+
+function compare(a: string, b: string): number {
+  return a < b ? -1 : a > b ? 1 : 0;
+}
 
 /** A text summary of the saved run state: counts, tokens, reported bugs, and every failed file with its reason. */
 export async function describeStatus(config: ModernizerConfig): Promise<string> {
@@ -21,17 +28,28 @@ export async function describeStatus(config: ModernizerConfig): Promise<string> 
   ];
   let input = 0;
   let output = 0;
-  const bugs: string[] = [];
+  const findings: { file: string; bug: BugReport }[] = [];
   for (const [file, record] of records) {
     input += record?.usage?.inputTokens ?? 0;
     output += record?.usage?.outputTokens ?? 0;
-    for (const bug of record?.bugs ?? []) {
-      bugs.push(`  ${file}${bug.line === undefined ? '' : `:${String(bug.line)}`}  ${bug.reason}`);
-    }
+    for (const bug of record?.bugs ?? []) findings.push({ file, bug });
   }
+  const rank = (b: BugReport): number =>
+    b.severity === undefined ? RANKS.length : RANKS.indexOf(b.severity);
+  findings.sort(
+    (a, b) =>
+      rank(a.bug) - rank(b.bug) || compare(a.file, b.file) || (a.bug.line ?? 0) - (b.bug.line ?? 0),
+  );
+  const count = (s?: Severity): number => findings.filter((f) => f.bug.severity === s).length;
+  const bugs = findings.map(
+    ({ file, bug }) =>
+      `  [${bug.severity ?? 'unrated'}] ${file}${bug.line === undefined ? '' : `:${String(bug.line)}`}  ${bug.reason}` +
+      (bug.step === undefined ? '' : `  (${bug.step})`),
+  );
   lines.push(
     `Tokens: ${String(input + output)} (input ${String(input)} · output ${String(output)}) · ` +
-      `reported bugs: ${String(bugs.length)}`,
+      `reported bugs: ${String(bugs.length)} (high ${String(count('high'))} · medium ${String(count('medium'))} · ` +
+      `low ${String(count('low'))} · unrated ${String(count(undefined))})`,
   );
   if (failed.length > 0) {
     lines.push('', `Failed (${String(failed.length)}):`);

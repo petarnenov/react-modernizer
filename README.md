@@ -14,8 +14,8 @@ Built for large **CRA + Redux + React Router + React Query + Zustand + Jest** co
 [docs/design.md](docs/design.md) for how it works and what is still planned.
 
 > **Status:** early. Configuration, the import graph, `plan`, the run loop (worktrees, gates, commits, resume) and the
-> steps `characterize-tests`, `class-to-function`, `js-to-ts` and `simplify` work. `analyze` is not implemented yet:
-> disable it to run.
+> five steps — `analyze`, `characterize-tests`, `class-to-function`, `js-to-ts`, `simplify` — work. Not yet tried on a
+> real codebase with a real model: run a pilot first (below).
 
 ## Usage
 
@@ -37,6 +37,23 @@ One agent runs at a time by default (`concurrency.workers: 1`).
 Run `plan` first on a new codebase: it lists the order files would be processed in, every import that cannot be
 resolved, dynamic imports that cannot be followed, files that do not parse, and import cycles — in seconds, with no
 model calls.
+
+## Finding bugs first (`analyze`)
+
+The first step reads each file before anything changes and reports bugs and risks — it cannot change a line. Your
+linter's output for the file (`steps.analyze.lintCommand`, ESLint by default) is given to the model as evidence.
+Findings have a line, a severity and a reason, and `status` lists them highest first:
+
+```
+[high] src/Cart.jsx:31  total ignores discounts  (analyze)
+[low] src/List.jsx:12  index used as key  (analyze)
+```
+
+Every step can report findings; none fixes them — the modernisation keeps behaviour, bugs included. To save cost,
+raise `steps.analyze.minLines` or give analysis a cheaper model (`steps.analyze.model: claude-haiku-4-5`).
+
+A step that changes nothing is not re-checked by the gates, so problems a file already has (legacy lint errors) do not
+fail steps that did not touch it.
 
 ## Running `characterize-tests`
 

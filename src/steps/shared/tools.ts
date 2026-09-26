@@ -3,7 +3,7 @@ import { basename, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { z } from 'zod';
 import { defineTool, type ModelTool } from '../../model/client.js';
 import { runCommand } from '../../run/gates.js';
-import type { BugReport } from '../step.js';
+import { SEVERITIES, type BugReport } from '../step.js';
 
 const READ_LIMIT = 200_000;
 const HIDDEN = new Set(['node_modules', '.git']);
@@ -129,10 +129,21 @@ export function reportBugTool(
     description,
     inputSchema: z.object({
       line: z.number().int().positive().optional().describe('1-based line in the file'),
+      severity: z
+        .enum(SEVERITIES)
+        .optional()
+        .describe(
+          'high: wrong behaviour users can hit, data loss, security; medium: wrong under specific conditions, ' +
+            'races, leaks; low: fragile code a refactor could break',
+        ),
       reason: z.string().min(1).describe('What looks wrong and why'),
     }),
-    run: ({ line, reason }) => {
-      report(line === undefined ? { reason } : { line, reason });
+    run: ({ line, severity, reason }) => {
+      report({
+        reason,
+        ...(line === undefined ? {} : { line }),
+        ...(severity === undefined ? {} : { severity }),
+      });
       return Promise.resolve('recorded');
     },
   });

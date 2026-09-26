@@ -407,7 +407,7 @@ describe('run and status commands', () => {
     expect(status.stdout).toContain('src/Card.jsx:2  renders one item too few');
   });
 
-  it('refuses to run with the default steps, which are not implemented yet', async () => {
+  it('with every step on by default, refuses to start until the target has a tsconfig.json', async () => {
     const root = await tempRepo(APP);
     const config = join(root, '..', `${root.split('/').pop() ?? 'x'}-default.yaml`);
     await writeFile(config, `target: ${JSON.stringify(root)}\n`);
@@ -415,7 +415,7 @@ describe('run and status commands', () => {
     const result = await run(['run', config]);
 
     expect(result.code).toBe(1);
-    expect(result.stderr).toContain('not implemented yet: analyze');
+    expect(result.stderr).toContain('the target has no tsconfig.json');
   });
 
   it('refuses a target outside any repository', async () => {

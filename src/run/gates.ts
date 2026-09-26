@@ -43,7 +43,7 @@ export function runCommand(
   command: string,
   cwd: string,
   timeoutSeconds: number,
-): Promise<{ ok: boolean; output: string }> {
+): Promise<{ ok: boolean; output: string; code?: number | null }> {
   return new Promise((resolve) => {
     const child = spawn('sh', ['-c', command], {
       cwd,
@@ -72,7 +72,7 @@ export function runCommand(
 
     child.on('error', (error) => {
       clearTimeout(timer);
-      resolve({ ok: false, output: error.message });
+      resolve({ ok: false, output: error.message, code: null });
     });
     child.on('close', (code) => {
       clearTimeout(timer);
@@ -82,7 +82,7 @@ export function runCommand(
           output: `${output}\nstopped after the ${String(timeoutSeconds)}s timeout`,
         });
       } else {
-        resolve({ ok: code === 0, output });
+        resolve({ ok: code === 0, output, code });
       }
     });
   });

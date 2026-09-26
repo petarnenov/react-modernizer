@@ -60,6 +60,13 @@ it is used), and the lint output.
 `minLines` uses `measure()` like `simplify`. Default 0 because bugs hide in small files too; users who want to save
 cost raise it or pick a cheaper `steps.analyze.model`.
 
+### 7. Unchanged steps skip the gates
+
+Found while implementing: after every step the gates ran on the file even when the step changed nothing. A legacy
+file with lint errors would then fail `analyze` — and every other step that has nothing to do — and never be
+migrated, for problems no step introduced. A step attempt that leaves no change passes without the gates. Changes made
+by earlier steps were gated when they were made. The gates-only baseline (every step disabled) is unchanged.
+
 ## Risks / Trade-offs
 
 - [Noise: models over-report] → Severity definitions are concrete; "report only what you can point to"; findings never

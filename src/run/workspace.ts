@@ -180,6 +180,11 @@ export class Worktree {
     }
   }
 
+  /** The tree the index holds now: equal trees mean equal staged content. */
+  async stagedTree(): Promise<string> {
+    return (await git(this.path, ['write-tree'])).stdout.trim();
+  }
+
   /** The staged diff with rename detection and no context: exactly the lines the change adds and removes. */
   async stagedDiff(): Promise<string> {
     return (
