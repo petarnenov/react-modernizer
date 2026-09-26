@@ -6,7 +6,11 @@ target: ../my-cra-app
 
 source:
   include: ['src/**/*.{js,jsx}']
-  exclude: []
+  exclude: # setting this replaces the defaults below
+    - '**/*.test.{js,jsx}'
+    - '**/*.spec.{js,jsx}'
+    - '**/__tests__/**'
+    - '**/setupTests.js'
 
 order: dependency-graph # leaves first, so types flow upwards
 

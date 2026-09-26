@@ -53,7 +53,9 @@ Files are processed leaves first (utils → hooks → small components → pages
 imports and can use their types instead of `any`. A failed dependency counts as settled — it stays JavaScript and its
 dependents are still migrated. Import cycles are broken at the file with the fewest unsettled imports.
 
-Implemented in `src/orchestrator/scheduler.ts`.
+Implemented in `src/orchestrator/scheduler.ts`; the graph itself in `src/graph/` (discovery, import extraction with
+the TypeScript parser, CRA-style resolution including `baseUrl`, cycles). `plan` shows the order and the graph's
+problems — unresolved imports, unfollowable dynamic imports, parse errors, cycles — without calling a model.
 
 ## Gates
 
@@ -112,7 +114,7 @@ Behaviour that exists is specified in `openspec/specs/`; planned parts become Op
 | -------------------------------------------- | ------- |
 | Config schema, loading, `--workers` override | done    |
 | Dependency-ordered scheduler, worker pool    | done    |
-| Import graph from the target codebase        | planned |
+| Import graph, `plan` command                 | done    |
 | Worktrees, commits, state file               | planned |
 | Step runners (model calls)                   | planned |
 | Gates (commands, coverage, diff rules)       | planned |

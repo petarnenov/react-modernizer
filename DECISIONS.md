@@ -26,3 +26,11 @@
   `file-scheduling` — describing current behaviour and matching the existing tests. Everything after goes through
   changes.
 - **Artifacts in English**, like the code; conversation can be in any language.
+
+## 4. Import graph dependencies (add-import-graph, 2026-09-26)
+
+- **`typescript` 6.0.3 moves to `dependencies`.** The graph parses files with the compiler API
+  (`ts.createSourceFile`), which reads JSX, tells a computed `import()` from a literal one, and reports parse errors.
+  TypeScript 7 is the Go-native compiler without that JS API, so 6.0.3 stays — already pinned for typescript-eslint.
+- **`tinyglobby` 0.2.17 added** for discovery: no dependencies, brace and globstar patterns. `fs.promises.glob` is
+  still flagged experimental on Node 22 and prints a warning on every run.

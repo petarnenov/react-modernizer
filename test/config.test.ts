@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { applyOverrides, ConfigError, loadConfig, parseConfig } from '../src/config/load.js';
+import { DEFAULT_EXCLUDE } from '../src/config/schema.js';
 
 describe('parseConfig', () => {
   it('fills every default from a minimal config', () => {
@@ -14,6 +15,19 @@ describe('parseConfig', () => {
     expect(config.steps['redux-connect-to-hooks'].enabled).toBe(false);
     expect(config.steps['class-to-function'].skip).toEqual(['error-boundary']);
     expect(config.gates.protectTestsFrom).toBe('characterize-tests');
+  });
+
+  it('leaves test files out of the default selection', () => {
+    const { source } = parseConfig({ target: '.' });
+
+    expect(source.include).toEqual(['src/**/*.{js,jsx}']);
+    expect(source.exclude).toEqual(DEFAULT_EXCLUDE);
+  });
+
+  it('replaces the default exclude instead of adding to it', () => {
+    const { source } = parseConfig({ target: '.', source: { exclude: ['src/legacy/**'] } });
+
+    expect(source.exclude).toEqual(['src/legacy/**']);
   });
 
   it('keeps gate concurrency when set apart from workers', () => {

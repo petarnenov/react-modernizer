@@ -1,0 +1,4 @@
+{
+  // CRA absolute imports: `import x from 'components/Card'`
+  "compilerOptions": { "baseUrl": "src" }
+}

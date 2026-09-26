@@ -12,6 +12,16 @@ export const STEP_IDS = [
 
 export type StepId = (typeof STEP_IDS)[number];
 
+const DEFAULT_INCLUDE = ['src/**/*.{js,jsx}'];
+
+/** A test belongs to the file it tests; it is not a unit of work of its own. */
+export const DEFAULT_EXCLUDE = [
+  '**/*.test.{js,jsx}',
+  '**/*.spec.{js,jsx}',
+  '**/__tests__/**',
+  '**/setupTests.js',
+];
+
 const stepSchema = z
   .object({
     enabled: z.boolean().default(true),
@@ -42,11 +52,12 @@ export const configSchema = z
     target: z.string().min(1),
     source: z
       .object({
-        include: z.array(z.string().min(1)).min(1).default(['src/**/*.{js,jsx}']),
-        exclude: z.array(z.string().min(1)).default([]),
+        include: z.array(z.string().min(1)).min(1).default(DEFAULT_INCLUDE),
+        /** Setting it replaces the default list; it does not add to it. */
+        exclude: z.array(z.string().min(1)).default(DEFAULT_EXCLUDE),
       })
       .strict()
-      .default({ include: ['src/**/*.{js,jsx}'], exclude: [] }),
+      .default({ include: DEFAULT_INCLUDE, exclude: DEFAULT_EXCLUDE }),
     /** `dependency-graph` processes leaves first so types flow upwards. */
     order: z.enum(['dependency-graph', 'alphabetical']).default('dependency-graph'),
     steps: stepsSchema.default(stepsSchema.parse({})),

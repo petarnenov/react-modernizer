@@ -28,4 +28,4 @@ openspec/changes/.
 
 - `npm run verify` — typecheck, lint, test, specs, build (what CI runs)
 - `npm test` · `npm run lint` · `npm run format` · `npm run specs`
-- `node dist/cli.js check-config [file] [--workers n]`
+- `node dist/bin.js check-config [file] [--workers n]`
