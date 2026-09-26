@@ -1,10 +1,40 @@
+import { createHash } from 'node:crypto';
 import { lstat, mkdir, rm, symlink } from 'node:fs/promises';
-import { join } from 'node:path';
+import { tmpdir } from 'node:os';
+import { basename, join, sep } from 'node:path';
 import { git, GitError, type Repository } from './git.js';
 
-/** Where a run keeps its state and worktrees: inside the shared git directory, invisible to `git status`. */
+const branchDir = (branch: string) => branch.replaceAll('/', '__');
+
+/** Where a run keeps its state: inside the shared git directory, invisible to `git status`. */
 export function runDirectory(repo: Repository, branch: string): string {
-  return join(repo.commonDir, 'modernizer', 'runs', branch.replaceAll('/', '__'));
+  return join(repo.commonDir, 'modernizer', 'runs', branchDir(branch));
+}
+
+/**
+ * Path segments tools skip: Jest's file map ignores everything under `.git`, `.hg` and `.sl`, and most tools skip
+ * `node_modules`. A worktree under one of them has tests Jest cannot see.
+ */
+const IGNORED_SEGMENTS = new Set(['.git', '.hg', '.sl', 'node_modules']);
+
+/**
+ * Where a run's worktrees live: in the system temp directory, outside the repository and outside any directory
+ * tools ignore. One directory per repository (by its git directory) and run branch.
+ */
+export function worktreeDirectory(
+  repo: Repository,
+  branch: string,
+  base: string = tmpdir(),
+): string {
+  const id = createHash('sha256').update(repo.commonDir).digest('hex').slice(0, 12);
+  const dir = join(base, 'react-modernizer', `${basename(repo.root)}-${id}`, branchDir(branch));
+  const ignored = dir.split(sep).find((segment) => IGNORED_SEGMENTS.has(segment));
+  if (ignored !== undefined) {
+    throw new Error(
+      `worktrees cannot live under ${dir}: tools such as Jest ignore files under "${ignored}". Set TMPDIR to another directory.`,
+    );
+  }
+  return dir;
 }
 
 const NODE_MODULES_PATHSPEC = ':(exclude,glob)**/node_modules';
@@ -216,15 +246,14 @@ async function exists(path: string): Promise<boolean> {
   );
 }
 
-/** Creates `count` worktrees at `commit`, replacing leftovers of an interrupted run. */
+/** Creates `count` worktrees at `commit` in `base`, replacing leftovers of an interrupted run. */
 export async function createWorktrees(
   repo: Repository,
-  runDir: string,
+  base: string,
   count: number,
   commit: string,
   targetNodeModules: string,
 ): Promise<Worktree[]> {
-  const base = join(runDir, 'worktrees');
   await mkdir(base, { recursive: true });
   await git(repo.root, ['worktree', 'prune']);
   const linkNodeModules = await exists(targetNodeModules);

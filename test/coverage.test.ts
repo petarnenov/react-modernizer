@@ -7,7 +7,7 @@ import { Semaphore } from '../src/run/gates.js';
 import { openRepository } from '../src/run/git.js';
 import { countTests, weakening } from '../src/run/protection.js';
 import { processFile, type FileJob } from '../src/run/transaction.js';
-import { createWorktrees, RunBranch, runDirectory } from '../src/run/workspace.js';
+import { createWorktrees, RunBranch, worktreeDirectory } from '../src/run/workspace.js';
 import type { Step, StepContext } from '../src/steps/step.js';
 import { tempRepo } from './helpers/repo.js';
 
@@ -148,7 +148,7 @@ describe('coverage and protection in the pipeline', () => {
     const base = await new RunBranch(repo, 'r').ensure('HEAD');
     const [worktree] = await createWorktrees(
       repo,
-      runDirectory(repo, 'r'),
+      worktreeDirectory(repo, 'r'),
       1,
       base,
       join(root, 'nm'),

@@ -106,7 +106,8 @@ scale `workers`.
 
 Each worker has a git worktree of the target; accepted files are committed one per commit on the run branch
 (`git.branch`, default `modernizer/run`), merged with `git merge-tree` so parallel workers never need a checkout.
-Worktrees and `state.json` live in `<git-dir>/modernizer/runs/<branch>/` — never in the user's working tree. Running
+`state.json` lives in `<git-dir>/modernizer/runs/<branch>/`; worktrees in `<temp>/react-modernizer/<repo>-<id>/<branch>/`
+— never in the user's working tree, and never under `.git`, where Jest ignores every file. Running
 again resumes; `--fresh` starts over. Requires git ≥ 2.38.
 
 ## Status

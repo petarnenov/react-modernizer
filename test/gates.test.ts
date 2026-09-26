@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { findForbidden, runGateCommands, Semaphore, shellQuote } from '../src/run/gates.js';
 import { openRepository } from '../src/run/git.js';
-import { createWorktrees, RunBranch, runDirectory } from '../src/run/workspace.js';
+import { createWorktrees, RunBranch, worktreeDirectory } from '../src/run/workspace.js';
 import { tempRepo } from './helpers/repo.js';
 
 const run = async (commands: string[], files: string[] = [], timeoutSeconds = 30) =>
@@ -126,7 +126,7 @@ describe('findForbidden', () => {
     const repo = await openRepository(root);
     const [w] = await createWorktrees(
       repo,
-      runDirectory(repo, 'r'),
+      worktreeDirectory(repo, 'r'),
       1,
       await new RunBranch(repo, 'r').ensure('HEAD'),
       join(root, 'node_modules'),

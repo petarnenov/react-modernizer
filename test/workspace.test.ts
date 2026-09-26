@@ -3,7 +3,13 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { openRepository, parseGitVersion, RepositoryError } from '../src/run/git.js';
-import { createWorktrees, removeWorktrees, RunBranch, runDirectory } from '../src/run/workspace.js';
+import {
+  createWorktrees,
+  removeWorktrees,
+  RunBranch,
+  runDirectory,
+  worktreeDirectory,
+} from '../src/run/workspace.js';
 import { sh, tempRepo, writeFiles } from './helpers/repo.js';
 
 describe('openRepository', () => {
@@ -35,7 +41,7 @@ describe('workspace', () => {
     const tip = await branch.ensure('HEAD');
     const [w1, w2] = await createWorktrees(
       repo,
-      runDirectory(repo, 'modernizer/run'),
+      worktreeDirectory(repo, 'modernizer/run'),
       2,
       tip,
       join(root, 'node_modules'),
@@ -114,7 +120,7 @@ describe('workspace', () => {
     const branch = new RunBranch(repo, 'modernizer/run');
     const [w] = await createWorktrees(
       repo,
-      runDirectory(repo, 'modernizer/run'),
+      worktreeDirectory(repo, 'modernizer/run'),
       1,
       await branch.ensure('HEAD'),
       join(root, 'node_modules'),
@@ -134,5 +140,36 @@ describe('workspace', () => {
     const { root } = await setup();
 
     expect(sh(root, 'status', '--porcelain')).toBe('');
+  });
+});
+
+describe('worktreeDirectory', () => {
+  it('is outside the repository and outside every directory Jest ignores', async () => {
+    const root = await tempRepo({ 'src/a.js': 'a\n' });
+    const repo = await openRepository(root);
+
+    const dir = worktreeDirectory(repo, 'modernizer/pilot-1');
+
+    expect(dir.startsWith(join(tmpdir(), 'react-modernizer'))).toBe(true);
+    expect(dir.endsWith('modernizer__pilot-1')).toBe(true);
+    expect(dir.split('/')).not.toContain('.git');
+    expect(dir.startsWith(root)).toBe(false);
+    // State stays with the repository.
+    expect(runDirectory(repo, 'modernizer/pilot-1').startsWith(repo.commonDir)).toBe(true);
+  });
+
+  it('differs per repository', async () => {
+    const a = await openRepository(await tempRepo({ 'a.js': 'a\n' }));
+    const b = await openRepository(await tempRepo({ 'a.js': 'a\n' }));
+
+    expect(worktreeDirectory(a, 'r')).not.toBe(worktreeDirectory(b, 'r'));
+  });
+
+  it('refuses a temp directory under a directory tools ignore', async () => {
+    const repo = await openRepository(await tempRepo({ 'a.js': 'a\n' }));
+
+    expect(() => worktreeDirectory(repo, 'r', '/home/me/project/.git/tmp')).toThrow(
+      'ignore files under ".git"',
+    );
   });
 });

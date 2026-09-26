@@ -153,3 +153,13 @@
 - **Two renderers, no dependency:** a live block of one line per active file in a TTY (ANSI cursor-up and clear,
   lines cut to the terminal width so the redraw count stays right), timestamped lines otherwise. `NO_COLOR` and
   `TERM=dumb` get the plain one.
+
+## 14. Worktrees outside `.git` (move-worktrees-outside-git, 2026-09-27)
+
+- **Found in the first real pilot:** 1.03M tokens on one file, because `jest-haste-map` adds `/.git/`, `/.hg/` and
+  `/.sl/` to its ignore pattern. In a worktree under `.git`, Jest found no tests, so `run_tests` and the Jest gate
+  always failed. Reproduced with Jest 29 (under `.git`: "No tests found"; under the temp directory: passes).
+- **Worktrees in `os.tmpdir()/react-modernizer/<repo>-<sha256(git dir)[:12]>/<branch>/`**; state stays in `.git`.
+  A path with an ignored segment is refused rather than silently producing a blind Jest.
+- The tests used stand-in commands, not real Jest, which is why this was missed. The scratch check with real Jest is
+  recorded here; it is not part of the suite, to keep `npm test` free of a Jest install.

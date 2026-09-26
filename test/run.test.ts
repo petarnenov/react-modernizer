@@ -9,7 +9,12 @@ import { openRepository } from '../src/run/git.js';
 import { runModernizer, statePath, StepsMissingError } from '../src/run/runner.js';
 import { emptyState, loadState, saveState } from '../src/run/state.js';
 import { processFile, type FileJob } from '../src/run/transaction.js';
-import { createWorktrees, RunBranch, runDirectory } from '../src/run/workspace.js';
+import {
+  createWorktrees,
+  RunBranch,
+  runDirectory,
+  worktreeDirectory,
+} from '../src/run/workspace.js';
 import type { Step, StepContext, StepRegistry } from '../src/steps/step.js';
 import { sh, tempRepo } from './helpers/repo.js';
 
@@ -75,7 +80,7 @@ describe('processFile', () => {
     const base = await branch.ensure('HEAD');
     const [worktree] = await createWorktrees(
       repo,
-      runDirectory(repo, 'r'),
+      worktreeDirectory(repo, 'r'),
       1,
       base,
       join(root, 'nm'),

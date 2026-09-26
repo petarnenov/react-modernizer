@@ -288,8 +288,9 @@ The last step: a model makes the file smaller and clearer with identical behavio
 
 - Your checkout, index and current branch are never touched. Every accepted file is one commit on `modernizer/run`
   (configurable), created from `HEAD`.
-- Workers use git worktrees kept inside `.git/modernizer/`, with your `node_modules` linked in, so the gates run
-  your own eslint, tsc and jest.
+- Workers use git worktrees in the system temp directory (`$TMPDIR/react-modernizer/…`), with your `node_modules`
+  linked in, so the gates run your own eslint, tsc and jest. Not inside `.git`: Jest ignores every file there. Run
+  state stays in `.git/modernizer/`.
 - Stop it at any time; running again continues where it left off.
 - Needs git 2.38 or newer.
 

@@ -14,6 +14,7 @@ import { processFile } from './transaction.js';
 import {
   createWorktrees,
   removeWorktrees,
+  worktreeDirectory,
   RunBranch,
   runDirectory,
   type Worktree,
@@ -164,7 +165,7 @@ export async function runModernizer(options: RunOptions): Promise<RunSummary> {
   phase(`preparing ${String(workers)} worktree${workers === 1 ? '' : 's'}`);
   const worktrees = await createWorktrees(
     repo,
-    runDir,
+    worktreeDirectory(repo, config.git.branch),
     workers,
     tip,
     join(config.target, 'node_modules'),
