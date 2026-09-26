@@ -4,6 +4,11 @@ import { STEP_IDS } from './config/schema.js';
 import { buildGraph } from './graph/build.js';
 import { TargetError } from './graph/discover.js';
 import { createPlan, renderPlan } from './plan.js';
+import { RepositoryError } from './run/git.js';
+import { runModernizer, StepsMissingError } from './run/runner.js';
+import { StateError } from './run/state.js';
+import { describeStatus } from './run/status.js';
+import { builtInSteps, type StepRegistry } from './steps/step.js';
 
 export interface Io {
   stdout: (text: string) => void;
@@ -18,7 +23,7 @@ function positiveInt(value: string): number {
   return n;
 }
 
-function createProgram(io: Io, setExit: (code: number) => void): Command {
+function createProgram(io: Io, setExit: (code: number) => void, steps: StepRegistry): Command {
   const program = new Command()
     .name('react-modernizer')
     .description('Modernize a React codebase file by file: tests, class→function, JS→TS, simplify.')
@@ -52,28 +57,59 @@ function createProgram(io: Io, setExit: (code: number) => void): Command {
 
   program
     .command('run')
-    .description('Process the codebase (not implemented yet)')
+    .description(
+      'Process the codebase file by file; accepted files are committed to the run branch',
+    )
     .argument('[config]', 'path to the config file', 'modernizer.config.yaml')
     .option('-w, --workers <n>', 'agents running at once (overrides the file)', positiveInt)
-    .action(() => {
-      io.stderr('run is not implemented yet — see docs/design.md for the plan.\n');
-      setExit(2);
+    .option('--fresh', 'discard the saved state and process every file again')
+    .action(async (path: string, options: { workers?: number; fresh?: boolean }) => {
+      const config = applyOverrides(await loadConfig(path), options);
+      const summary = await runModernizer({
+        config,
+        steps,
+        fresh: options.fresh === true,
+        log: (line) => {
+          io.stdout(`${line}\n`);
+        },
+      });
+      setExit(summary.stopped ? 3 : 0);
+    });
+
+  program
+    .command('status')
+    .description('Summarise the saved state of the run; runs nothing')
+    .argument('[config]', 'path to the config file', 'modernizer.config.yaml')
+    .action(async (path: string) => {
+      io.stdout(await describeStatus(await loadConfig(path)));
     });
 
   return program;
 }
 
 /** Runs the CLI and returns its exit code. `argv` excludes the node binary and script path. */
-export async function main(argv: readonly string[], io: Io): Promise<number> {
+export async function main(
+  argv: readonly string[],
+  io: Io,
+  steps: StepRegistry = builtInSteps,
+): Promise<number> {
   let exitCode = 0;
   try {
-    await createProgram(io, (code) => (exitCode = code)).parseAsync([...argv], { from: 'user' });
+    await createProgram(io, (code) => (exitCode = code), steps).parseAsync([...argv], {
+      from: 'user',
+    });
     return exitCode;
   } catch (error) {
     if (error instanceof CommanderError) {
       return error.exitCode;
     }
-    if (error instanceof ConfigError || error instanceof TargetError) {
+    if (
+      error instanceof ConfigError ||
+      error instanceof TargetError ||
+      error instanceof RepositoryError ||
+      error instanceof StepsMissingError ||
+      error instanceof StateError
+    ) {
       io.stderr(`${error.message}\n`);
       return 1;
     }

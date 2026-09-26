@@ -124,7 +124,10 @@ describe('cli', () => {
     );
   });
 
-  it('reports run as not implemented', async () => {
-    expect((await run('run', await configFor(FIXTURE))).code).toBe(2);
+  it('refuses run while the default steps are not implemented', async () => {
+    const result = await run('run', await configFor(FIXTURE));
+
+    expect(result.code).toBe(1);
+    expect(result.stderr).toContain('not implemented yet');
   });
 });

@@ -101,21 +101,24 @@ Before the whole codebase: 50–100 files across kinds (plain, class, `connect`-
 without human help, time and tokens per file, and review a sample of the tests by hand. Tune prompts and gates, then
 scale `workers`.
 
-## State and resume (planned)
+## Run, state and resume
 
-`.modernizer/state.json` in the target records each file's step and outcome, so a run can stop and resume without
-repeating work.
+Each worker has a git worktree of the target; accepted files are committed one per commit on the run branch
+(`git.branch`, default `modernizer/run`), merged with `git merge-tree` so parallel workers never need a checkout.
+Worktrees and `state.json` live in `<git-dir>/modernizer/runs/<branch>/` — never in the user's working tree. Running
+again resumes; `--fresh` starts over. Requires git ≥ 2.38.
 
 ## Status
 
 Behaviour that exists is specified in `openspec/specs/`; planned parts become OpenSpec changes.
 
-| Part                                         | State   |
-| -------------------------------------------- | ------- |
-| Config schema, loading, `--workers` override | done    |
-| Dependency-ordered scheduler, worker pool    | done    |
-| Import graph, `plan` command                 | done    |
-| Worktrees, commits, state file               | planned |
-| Step runners (model calls)                   | planned |
-| Gates (commands, coverage, diff rules)       | planned |
-| Reports and PR batching                      | planned |
+| Part                                          | State   |
+| --------------------------------------------- | ------- |
+| Config schema, loading, `--workers` override  | done    |
+| Dependency-ordered scheduler, worker pool     | done    |
+| Import graph, `plan` command                  | done    |
+| Worktrees, run branch, commits, state, resume | done    |
+| Step runners (model calls)                    | planned |
+| Gates: commands, timeout, forbidden patterns  | done    |
+| Gates: coverage, test protection              | planned |
+| Reports and PR batching                       | planned |

@@ -30,6 +30,11 @@ gates:
   coverage: { min: 80 }
   forbid: [': any', 'as any', '@ts-ignore', '@ts-nocheck', 'eslint-disable', 'toMatchSnapshot']
   protectTestsFrom: characterize-tests
+  timeoutSeconds: 600 # per gate command
+
+git:
+  branch: modernizer/run # accepted files are committed here, one commit per file
+  base: HEAD # where the run branch starts if it does not exist
 
 retry: { perStep: 3, onFail: revert-and-report }
 

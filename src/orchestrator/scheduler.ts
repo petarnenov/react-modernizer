@@ -51,6 +51,17 @@ export class Scheduler {
     }
   }
 
+  /** Marks a file settled before it is handed out — for files an earlier run already finished. */
+  settle(file: string, outcome: Outcome): void {
+    if (!this.pending.delete(file)) {
+      return; // unknown or already handed out: nothing to settle
+    }
+    this.settled.set(file, outcome);
+    for (const dependent of this.dependents.get(file) ?? []) {
+      this.pending.get(dependent)?.delete(file);
+    }
+  }
+
   get isFinished(): boolean {
     return this.pending.size === 0 && this.running.size === 0;
   }
@@ -89,7 +100,9 @@ export async function runPool(
   scheduler: Scheduler,
   workers: number,
   work: (file: string) => Promise<Outcome>,
+  options: { shouldStop?: () => boolean } = {},
 ): Promise<ReadonlyMap<string, Outcome>> {
+  const stopped = options.shouldStop ?? (() => false);
   if (!Number.isInteger(workers) || workers < 1) {
     throw new RangeError(`workers must be a positive integer, got ${String(workers)}`);
   }
@@ -109,7 +122,8 @@ export async function runPool(
 
   while (!scheduler.isFinished) {
     let file: string | undefined;
-    while (inFlight.size < workers && (file = scheduler.next()) !== undefined) {
+    // Once stopped, no new file starts; the ones running are allowed to finish.
+    while (!stopped() && inFlight.size < workers && (file = scheduler.next()) !== undefined) {
       start(file);
     }
     if (inFlight.size === 0) {

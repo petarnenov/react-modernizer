@@ -88,25 +88,21 @@ export const configSchema = z
           ]),
         /** Tests written by this step may not be deleted or weakened by later steps. */
         protectTestsFrom: z.enum(STEP_IDS).nullable().default('characterize-tests'),
+        /** How long one gate command may run before it is stopped and counted as failed. */
+        timeoutSeconds: z.number().int().min(1).default(600),
       })
       .strict()
-      .default({
-        commands: [
-          'npx eslint {files}',
-          'npx tsc --noEmit --incremental',
-          'npx jest --findRelatedTests {files}',
-        ],
-        coverage: { min: 80 },
-        forbid: [
-          ': any',
-          'as any',
-          '@ts-ignore',
-          '@ts-nocheck',
-          'eslint-disable',
-          'toMatchSnapshot',
-        ],
-        protectTestsFrom: 'characterize-tests',
-      }),
+      // prefault runs `{}` through the schema, so the defaults above are the only ones.
+      .prefault({}),
+    git: z
+      .object({
+        /** Accepted files are committed here; the user's own branch is never touched. */
+        branch: z.string().min(1).default('modernizer/run'),
+        /** Where the run branch starts when it does not exist yet. */
+        base: z.string().min(1).default('HEAD'),
+      })
+      .strict()
+      .prefault({}),
     retry: z
       .object({
         perStep: z.number().int().min(0).max(10).default(3),

@@ -30,6 +30,14 @@ describe('parseConfig', () => {
     expect(source.exclude).toEqual(['src/legacy/**']);
   });
 
+  it('defaults the run branch, its base and the gate timeout', () => {
+    const config = parseConfig({ target: '.' });
+
+    expect(config.git).toEqual({ branch: 'modernizer/run', base: 'HEAD' });
+    expect(config.gates.timeoutSeconds).toBe(600);
+    expect(config.gates.commands).toHaveLength(3);
+  });
+
   it('keeps gate concurrency when set apart from workers', () => {
     const config = parseConfig({ target: '.', concurrency: { workers: 8, gates: 2 } });
 
@@ -42,6 +50,8 @@ describe('parseConfig', () => {
     [{ steps: { 'no-such-step': {} } }, 'no-such-step'],
     [{ gates: { coverage: { min: 120 } } }, 'min'],
     [{ unknownKey: true }, 'unknownKey'],
+    [{ gates: { timeoutSeconds: 0 } }, 'timeoutSeconds'],
+    [{ git: { branch: '' } }, 'branch'],
   ])('rejects %j', (partial, mentioned) => {
     expect(() => parseConfig({ target: '.', ...partial })).toThrow(ConfigError);
     expect(() => parseConfig({ target: '.', ...partial })).toThrow(mentioned);

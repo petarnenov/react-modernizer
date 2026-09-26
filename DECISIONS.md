@@ -34,3 +34,19 @@
   TypeScript 7 is the Go-native compiler without that JS API, so 6.0.3 stays — already pinned for typescript-eslint.
 - **`tinyglobby` 0.2.17 added** for discovery: no dependencies, brace and globstar patterns. `fs.promises.glob` is
   still flagged experimental on Node 22 and prints a warning on every run.
+
+## 5. Run loop (add-run-workspace, 2026-09-26)
+
+- **Run data lives in the target's `.git`** (`modernizer/runs/<branch>/`): invisible to `git status`, no
+  `.gitignore` entry needed in a codebase that is not ours, removed with the repository.
+- **Worktree per worker; commits merged with `git merge-tree --write-tree`**, `commit-tree` and a compare-and-swap
+  `update-ref`. No integration checkout, no half-applied cherry-pick; a conflict fails the file cleanly. Requires
+  **git ≥ 2.38**, checked at start.
+- **Gates after every step**, so a failure belongs to the step that caused it; retries build on the step's own
+  previous output.
+- **`node_modules` is symlinked** into worktrees and excluded from staging and cleaning by pathspec, because a
+  symlink does not match a `node_modules/` ignore rule.
+- **User hooks and signing are skipped** on worker commits (`--no-verify`, `commit.gpgsign=false`): the gates are the
+  checks, and an unattended run cannot answer a signing prompt.
+- **Enabled but unimplemented steps stop `run` before it starts.** A default config therefore does not run yet;
+  disabling every step gives a gates-only baseline.

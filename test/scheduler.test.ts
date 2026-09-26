@@ -48,6 +48,26 @@ describe('Scheduler', () => {
   });
 });
 
+describe('Scheduler.settle', () => {
+  it('skips files settled by an earlier run and releases their dependents', () => {
+    const s = new Scheduler(graph({ page: ['card'], card: ['api'], api: [] }));
+    s.settle('api', 'done');
+    s.settle('card', 'done');
+
+    expect(s.next()).toBe('page');
+    s.complete('page', 'done');
+    expect(s.isFinished).toBe(true);
+    expect(Object.fromEntries(s.results)).toEqual({ api: 'done', card: 'done', page: 'done' });
+  });
+
+  it('ignores files it does not know', () => {
+    const s = new Scheduler(graph({ a: [] }));
+    s.settle('zzz', 'failed');
+
+    expect(s.next()).toBe('a');
+  });
+});
+
 describe('runPool', () => {
   it('never exceeds the worker limit and processes every file', async () => {
     const files = Object.fromEntries(Array.from({ length: 20 }, (_, i) => [`f${String(i)}`, []]));
@@ -89,6 +109,24 @@ describe('runPool', () => {
     );
 
     expect(Object.fromEntries(results)).toEqual({ bad: 'failed', good: 'done' });
+  });
+
+  it('starts no new file once stopped, and lets running ones finish', async () => {
+    let stop = false;
+    const started: string[] = [];
+    const results = await runPool(
+      new Scheduler(graph({ a: [], b: [], c: [] })),
+      1,
+      (file) => {
+        started.push(file);
+        stop = true;
+        return Promise.resolve<Outcome>('failed');
+      },
+      { shouldStop: () => stop },
+    );
+
+    expect(started).toEqual(['a']);
+    expect(results.size).toBe(1);
   });
 
   it('rejects a non-positive worker count', async () => {
