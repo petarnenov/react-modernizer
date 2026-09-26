@@ -15,7 +15,7 @@ Built for large **CRA + Redux + React Router + React Query + Zustand + Jest** co
 
 > **Status:** early. Configuration, the import graph, `plan`, the run loop (worktrees, gates, commits, resume) and the
 > five steps — `analyze`, `characterize-tests`, `class-to-function`, `js-to-ts`, `simplify` — work. Not yet tried on a
-> real codebase with a real model: run a pilot first (below).
+> real codebase with a real model: run a [pilot](#pilot-step-by-step) first.
 
 ## Usage
 
@@ -37,6 +37,155 @@ One agent runs at a time by default (`concurrency.workers: 1`).
 Run `plan` first on a new codebase: it lists the order files would be processed in, every import that cannot be
 resolved, dynamic imports that cannot be followed, files that do not parse, and import cycles — in seconds, with no
 model calls.
+
+## Pilot, step by step
+
+Every step is tested, but with a scripted model and stand-in commands. Before a whole codebase, run a pilot on
+10–15 files, in two phases: first one that changes no code (cheap, and shows whether the tests are good), then the
+conversions. Run it on your own machine, where the codebase and its `node_modules` are.
+
+### 0. Prerequisites
+
+```sh
+node --version   # ≥ 22.13
+git --version    # ≥ 2.38
+```
+
+### 1. Install react-modernizer
+
+```sh
+git clone https://github.com/petarnenov/react-modernizer.git
+cd react-modernizer
+npm ci
+npm run build
+```
+
+### 2. Prepare the target codebase
+
+```sh
+cd /path/to/your-app
+git status                                        # clean: a run starts from the last commit, not uncommitted work
+npm ci                                            # the gates use your eslint and jest from node_modules
+CI=true npx react-scripts test --watchAll=false   # your tests must run at all
+```
+
+A run never touches your branch or working tree: accepted files go to a `modernizer/…` branch, and its working data
+to `.git/modernizer/`.
+
+### 3. Credentials
+
+```sh
+export ANTHROPIC_API_KEY=sk-ant-...   # or: ant auth login
+```
+
+### 4. Choose 10–15 files
+
+```sh
+cd /path/to/react-modernizer
+cp modernizer.config.example.yaml pilot.yaml   # set `target` in it
+node dist/bin.js plan pilot.yaml | less        # order, unresolved imports, cycles
+```
+
+Pick a mix: 3–4 class components, 3–4 function components, 2 utilities or hooks, 1–2 components using `connect()` or
+React Query, and one large, tangled file.
+
+### 5. Phase 1 — analysis and tests only (no source changes)
+
+`pilot.yaml`:
+
+```yaml
+target: /path/to/your-app
+source:
+  include:
+    - src/components/Button.jsx
+    - src/components/UserCard.jsx
+    - src/utils/format.js
+    # … your 10–15 files
+steps:
+  analyze: {}
+  characterize-tests:
+    helpers: [] # e.g. [src/test-utils.js] if you have renderWithProviders
+  class-to-function: { enabled: false }
+  js-to-ts: { enabled: false }
+  simplify: { enabled: false }
+gates:
+  commands:
+    - npx eslint {files}
+    - '{testRunner} --findRelatedTests {files}'
+    # tsc left out: without a tsconfig.json it fails on every file
+git:
+  branch: modernizer/pilot-1
+```
+
+```sh
+node dist/bin.js check-config pilot.yaml   # must say OK
+node dist/bin.js run pilot.yaml
+node dist/bin.js status pilot.yaml
+```
+
+Review, in the target:
+
+```sh
+git log --stat main..modernizer/pilot-1   # one commit per file
+git show modernizer/pilot-1:src/components/Button.characterization.test.jsx
+```
+
+- **The tests:** do they check behaviour — what a user sees and does — without snapshots? Would they catch a real
+  change?
+- **The `analyze` findings:** real, or noise?
+- **Failed files:** `status` shows why. Likely suspects: how `react-scripts test` takes the coverage flags, missing
+  test helpers.
+- **Tokens:** multiply by the model's price (Sonnet 5: $2 per million input, $10 per million output), divide by the
+  number of files — that is the cost per file, and the forecast for the whole codebase.
+
+### 6. Phase 2 — the full migration
+
+When the phase 1 tests look right:
+
+1. For `js-to-ts`, add a `tsconfig.json` to the target (Phase 0 in [docs/design.md](docs/design.md): `allowJs`,
+   `strict`), commit it, and put `npx tsc --noEmit --incremental` back into `gates.commands`. Without it, keep
+   `js-to-ts: { enabled: false }`.
+2. In `pilot.yaml`, enable the steps and use a new branch:
+
+   ```yaml
+   steps:
+     class-to-function: {}
+     js-to-ts: {} # only with a tsconfig.json
+     simplify: {}
+   git:
+     branch: modernizer/pilot-2
+   ```
+
+3. Run and review:
+
+   ```sh
+   node dist/bin.js run pilot.yaml
+   node dist/bin.js status pilot.yaml
+   git log -p main..modernizer/pilot-2
+   ```
+
+A new branch because a run resumes from its saved state: on the phase 1 branch, those files already count as done
+and would not go through the new steps.
+
+Review the converted components (effects, `setState`), the types (any vague types), and whether `simplify` really
+simplified without changing meaning.
+
+### 7. When something goes wrong
+
+- **Interrupted** (Ctrl-C): run it again; it continues where it stopped.
+- **Start over:** `node dist/bin.js run pilot.yaml --fresh`.
+- **Clean up**, in the target:
+
+  ```sh
+  git branch -D modernizer/pilot-1 modernizer/pilot-2
+  rm -rf .git/modernizer
+  ```
+
+### 8. What to report back
+
+- `status` output for both phases;
+- two or three commits that look right and two or three that do not (`git show <sha>`);
+- the reasons files failed.
 
 ## Finding bugs first (`analyze`)
 
@@ -65,29 +214,7 @@ model can read the project, write only that one test file, and run only the test
 2. **Model and cost:** `claude-sonnet-5` at effort `high` by default (`model.default`, `model.effort`; a step can
    set its own `model`). Every file costs model calls; `budget.maxTokensPerFile` stops a runaway file, and `status`
    shows the tokens used so far.
-3. **Pilot on a few files first:** narrow `source.include` and enable only this step:
-
-   ```yaml
-   target: ../my-cra-app
-   source:
-     include: ['src/components/Button*.jsx', 'src/utils/format*.js']
-   steps:
-     analyze: { enabled: false }
-     class-to-function: { enabled: false }
-     js-to-ts: { enabled: false }
-     simplify: { enabled: false }
-     characterize-tests:
-       helpers: [src/test-utils.js] # your renderWithProviders, if you have one
-   ```
-
-   ```sh
-   node dist/bin.js plan     # check what will be processed
-   node dist/bin.js run      # tests land on branch modernizer/run
-   node dist/bin.js status   # tokens used, reported bugs, failures and why
-   git log -p main..modernizer/run
-   ```
-
-   Review the tests by hand before widening `source.include`.
+3. **Pilot first:** see [Pilot, step by step](#pilot-step-by-step).
 
 ## Converting class components (`class-to-function`)
 
