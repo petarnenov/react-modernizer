@@ -47,7 +47,8 @@ commit cannot be combined with the run branch — because another worker changed
 as failed like any other. When the
 attempts are exhausted, the file's changes SHALL be discarded and, with `retry.onFail: revert-and-report`, the file
 SHALL be recorded as failed with the reason while the run continues; with `retry.onFail: stop`, the run SHALL stop
-after recording it. An error inside a step SHALL be handled like a failed gate.
+after recording it. An error inside a step SHALL be handled like a failed gate. When the last attempt ends in an
+error after an earlier attempt failed the gates, the reason SHALL include that gate failure too.
 
 #### Scenario: Accepted file
 
@@ -73,6 +74,11 @@ after recording it. An error inside a step SHALL be handled like a failed gate.
 
 - **WHEN** the steps change nothing and the gates pass
 - **THEN** no commit is made and the file is recorded as done
+
+#### Scenario: Budget after a gate failure
+
+- **WHEN** the tsc gate fails a step's first attempt and the second attempt runs out of token budget
+- **THEN** the file's reason names the budget and also carries the tsc gate's new errors
 
 ### Requirement: Steps must exist
 
