@@ -31,9 +31,9 @@
 
 - [ ] 4.1 `plan.ts`: order by draining the real `Scheduler`, statistics, text and JSON rendering with paths relative
       to the target; verify tests for "Order follows dependencies" and "Codebase with problems"
-- [ ] 4.2 `plan [config] [--json]` in the CLI with exit codes as specified; verify tests for "JSON output", "Problems
-      are not failures" and "Missing target", and that the fixture tree is byte-identical before and after (`Target
-    is not changed`)
+- [ ] 4.2 `plan [config] [--json]` in the CLI with exit codes as specified; verify tests for "JSON output",
+      "Problems are not failures", "Missing target" and "Target is not changed" (fixture tree byte-identical before
+      and after)
 
 ## 5. Scale and docs
 
