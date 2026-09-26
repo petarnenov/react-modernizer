@@ -4,7 +4,9 @@ import type { BetaMessage } from '@anthropic-ai/sdk/resources/beta/messages/mess
 import {
   ModelAccessError,
   ModelRefusalError,
+  sortModels,
   type ModelClient,
+  type ModelInfo,
   type ToolRunRequest,
   type ToolRunResult,
 } from './client.js';
@@ -14,7 +16,10 @@ import type { UsageMeter } from './usage.js';
 
 /** The part of the SDK client this uses — small enough to stub in tests. */
 export interface AnthropicLike {
-  models: { retrieve(model: string): Promise<unknown> };
+  models: {
+    retrieve(model: string): Promise<unknown>;
+    list(): AsyncIterable<{ id: string; created_at: string }>;
+  };
   beta: { messages: { toolRunner: Anthropic['beta']['messages']['toolRunner'] } };
 }
 
@@ -37,6 +42,26 @@ export function optionalDetail(tool: string, input: unknown): { detail?: string 
   return detail === undefined ? {} : { detail };
 }
 
+/** What a failed models request means for the user; `model` is the one asked for, if any. */
+function accessError(error: unknown, model: string | undefined): ModelAccessError {
+  if (
+    error instanceof Anthropic.AuthenticationError ||
+    error instanceof Anthropic.PermissionDeniedError
+  ) {
+    return new ModelAccessError(`The model API rejected the credentials: ${CREDENTIALS_HINT}`);
+  }
+  if (error instanceof Anthropic.NotFoundError && model !== undefined) {
+    return new ModelAccessError(`Model not found: ${model}`);
+  }
+  if (error instanceof Anthropic.APIError) {
+    return new ModelAccessError(`The model API could not be reached: ${error.message}`);
+  }
+  // No credentials at all surfaces as a plain SDK error from the constructor or the request.
+  return new ModelAccessError(
+    `No credentials for the model API (${error instanceof Error ? error.message : String(error)}): ${CREDENTIALS_HINT}`,
+  );
+}
+
 /** {@link ModelClient} over the official SDK's tool runner. */
 export class AnthropicModelClient implements ModelClient {
   private client: AnthropicLike | undefined;
@@ -54,27 +79,25 @@ export class AnthropicModelClient implements ModelClient {
     return this.client;
   }
 
+  async listModels(): Promise<ModelInfo[]> {
+    try {
+      await this.limiter.acquire();
+      const models: ModelInfo[] = [];
+      for await (const m of this.sdk().models.list()) {
+        models.push({ name: m.id, modifiedAt: m.created_at });
+      }
+      return sortModels(models);
+    } catch (error) {
+      throw accessError(error, undefined);
+    }
+  }
+
   async check(model: string): Promise<void> {
     try {
       await this.limiter.acquire();
       await this.sdk().models.retrieve(model);
     } catch (error) {
-      if (
-        error instanceof Anthropic.AuthenticationError ||
-        error instanceof Anthropic.PermissionDeniedError
-      ) {
-        throw new ModelAccessError(`The model API rejected the credentials: ${CREDENTIALS_HINT}`);
-      }
-      if (error instanceof Anthropic.NotFoundError) {
-        throw new ModelAccessError(`Model not found: ${model}`);
-      }
-      if (error instanceof Anthropic.APIError) {
-        throw new ModelAccessError(`The model API could not be reached: ${error.message}`);
-      }
-      // No credentials at all surfaces as a plain SDK error from the constructor or the request.
-      throw new ModelAccessError(
-        `No credentials for the model API (${error instanceof Error ? error.message : String(error)}): ${CREDENTIALS_HINT}`,
-      );
+      throw accessError(error, model);
     }
   }
 

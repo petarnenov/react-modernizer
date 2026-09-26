@@ -204,3 +204,39 @@ describe('AnthropicModelClient', () => {
     );
   });
 });
+
+describe('AnthropicModelClient.listModels', () => {
+  it('lists every page of models, newest first', async () => {
+    const sdk = {
+      models: {
+        retrieve: () => Promise.resolve({}),
+        async *list() {
+          await Promise.resolve();
+          yield { id: 'claude-haiku-4-5', created_at: '2025-10-01T00:00:00Z' };
+          yield { id: 'claude-sonnet-5', created_at: '2026-05-01T00:00:00Z' };
+        },
+      },
+    } as unknown as AnthropicLike;
+    const client = new AnthropicModelClient(new RateLimiter(100), sdk);
+
+    expect(await client.listModels()).toEqual([
+      { name: 'claude-sonnet-5', modifiedAt: '2026-05-01T00:00:00Z' },
+      { name: 'claude-haiku-4-5', modifiedAt: '2025-10-01T00:00:00Z' },
+    ]);
+  });
+
+  it('reports rejected credentials as an access error', async () => {
+    const sdk = {
+      models: {
+        retrieve: () => Promise.resolve({}),
+        list() {
+          throw new Anthropic.AuthenticationError(401, undefined, 'bad key', new Headers());
+        },
+      },
+    } as unknown as AnthropicLike;
+
+    await expect(new AnthropicModelClient(new RateLimiter(100), sdk).listModels()).rejects.toThrow(
+      ModelAccessError,
+    );
+  });
+});

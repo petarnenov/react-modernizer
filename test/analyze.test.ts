@@ -3,7 +3,7 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { main } from '../src/cli.js';
 import { parseConfig } from '../src/config/load.js';
-import type { ModelClient, ModelTool, ToolRunRequest } from '../src/model/client.js';
+import type { ModelClient, ModelTool, ToolRunRequest, ModelInfo } from '../src/model/client.js';
 import type { UsageMeter } from '../src/model/usage.js';
 import { runModernizer } from '../src/run/runner.js';
 import { loadState } from '../src/run/state.js';
@@ -21,6 +21,9 @@ class ScriptedModel implements ModelClient {
     private readonly script: (tools: Tools, request: ToolRunRequest) => Promise<void> = () =>
       Promise.resolve(),
   ) {}
+  listModels(): Promise<ModelInfo[]> {
+    return Promise.resolve([]);
+  }
   check(): Promise<void> {
     return Promise.resolve();
   }

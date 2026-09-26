@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { ConfigError, parseConfig } from '../src/config/load.js';
-import type { ModelClient, ModelTool, ToolRunRequest } from '../src/model/client.js';
+import type { ModelClient, ModelTool, ToolRunRequest, ModelInfo } from '../src/model/client.js';
 import type { UsageMeter } from '../src/model/usage.js';
 import { runModernizer } from '../src/run/runner.js';
 import { loadState } from '../src/run/state.js';
@@ -25,6 +25,9 @@ type Tools = Record<string, ModelTool<never>>;
 class ScriptedModel implements ModelClient {
   readonly requests: ToolRunRequest[] = [];
   constructor(private readonly script: (tools: Tools, request: ToolRunRequest) => Promise<void>) {}
+  listModels(): Promise<ModelInfo[]> {
+    return Promise.resolve([]);
+  }
   check(): Promise<void> {
     return Promise.resolve();
   }

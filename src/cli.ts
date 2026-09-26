@@ -4,13 +4,14 @@ import { STEP_IDS, type ModernizerConfig } from './config/schema.js';
 import { buildGraph } from './graph/build.js';
 import { TargetError } from './graph/discover.js';
 import { createPlan, renderPlan } from './plan.js';
-import { ModelAccessError } from './model/client.js';
+import { ModelAccessError, type ModelClient, type ModelInfo } from './model/client.js';
 import { RepositoryError } from './run/git.js';
 import { PlainProgress, TerminalProgress } from './run/progress.js';
 import { runModernizer, StepsMissingError } from './run/runner.js';
 import { StateError } from './run/state.js';
 import { describeStatus } from './run/status.js';
-import { createBuiltInSteps } from './steps/registry.js';
+import { createBuiltInSteps, createModelClient } from './steps/registry.js';
+import { describeModel } from './cli/pick.js';
 import type { StepRegistry } from './steps/step.js';
 
 export interface Io {
@@ -18,6 +19,19 @@ export interface Io {
   stderr: (text: string) => void;
   /** A live status display is possible: stdout is an interactive terminal. */
   terminal?: boolean;
+  /** Lets the user choose one of `models`; undefined when cancelled. Absent without an interactive terminal. */
+  pickModel?: (
+    models: readonly ModelInfo[],
+    current: string,
+    title: string,
+  ) => Promise<string | undefined>;
+}
+
+type ClientFor = (config: ModernizerConfig) => ModelClient;
+
+/** Where the models come from, for the picker's title. */
+function providerLabel(config: ModernizerConfig): string {
+  return config.model.provider === 'ollama' ? `ollama · ${config.model.baseUrl}` : 'anthropic';
 }
 
 function positiveInt(value: string): number {
@@ -30,7 +44,19 @@ function positiveInt(value: string): number {
 
 type StepsFor = (config: ModernizerConfig) => StepRegistry;
 
-function createProgram(io: Io, setExit: (code: number) => void, stepsFor: StepsFor): Command {
+interface RunCommandOptions {
+  workers?: number;
+  fresh?: boolean;
+  model?: string;
+  pickModel?: boolean;
+}
+
+function createProgram(
+  io: Io,
+  setExit: (code: number) => void,
+  stepsFor: StepsFor,
+  clientFor: ClientFor,
+): Command {
   const program = new Command()
     .name('react-modernizer')
     .description('Modernize a React codebase file by file: tests, class→function, JS→TS, simplify.')
@@ -70,8 +96,38 @@ function createProgram(io: Io, setExit: (code: number) => void, stepsFor: StepsF
     .argument('[config]', 'path to the config file', 'modernizer.config.yaml')
     .option('-w, --workers <n>', 'agents running at once (overrides the file)', positiveInt)
     .option('--fresh', 'discard the saved state and process every file again')
-    .action(async (path: string, options: { workers?: number; fresh?: boolean }) => {
-      const config = applyOverrides(await loadConfig(path), options);
+    .option('-m, --model <name>', 'model for this run (overrides model.default)')
+    .option('--pick-model', "choose the model from the provider's current list")
+    .action(async (path: string, options: RunCommandOptions) => {
+      let config = applyOverrides(await loadConfig(path), options);
+      if (options.pickModel === true) {
+        if (io.terminal !== true || io.pickModel === undefined) {
+          throw new ConfigError(
+            '--pick-model needs an interactive terminal; use --model <name> instead',
+          );
+        }
+        const models = await clientFor(config).listModels();
+        const chosen = await io.pickModel(
+          models,
+          config.model.default,
+          `Model (${providerLabel(config)})`,
+        );
+        if (chosen === undefined) {
+          io.stderr('cancelled\n');
+          setExit(130);
+          return;
+        }
+        config = applyOverrides(config, { model: chosen });
+      }
+      if (options.model !== undefined || options.pickModel === true) {
+        const own = STEP_IDS.filter(
+          (id) => config.steps[id].enabled && config.steps[id].model !== undefined,
+        );
+        io.stdout(`model: ${config.model.default}\n`);
+        for (const id of own) {
+          io.stdout(`note: ${id} keeps its own model ${String(config.steps[id].model)}\n`);
+        }
+      }
       const renderer =
         io.terminal === true ? new TerminalProgress(io.stdout) : new PlainProgress(io.stdout);
       try {
@@ -93,6 +149,27 @@ function createProgram(io: Io, setExit: (code: number) => void, stepsFor: StepsF
     });
 
   program
+    .command('models')
+    .description('List the models the configured provider offers now; runs nothing')
+    .argument('[config]', 'path to the config file', 'modernizer.config.yaml')
+    .option('--json', 'print one JSON document instead of text')
+    .action(async (path: string, options: { json?: boolean }) => {
+      const config = await loadConfig(path);
+      const models = await clientFor(config).listModels();
+      if (options.json === true) {
+        io.stdout(`${JSON.stringify(models, null, 2)}\n`);
+        return;
+      }
+      const width = Math.max(0, ...models.map((m) => m.name.length));
+      io.stdout(`${String(models.length)} models (${providerLabel(config)}), newest first:\n`);
+      for (const m of models) {
+        const marker = m.name === config.model.default ? '*' : ' ';
+        const facts = describeModel(m);
+        io.stdout(`${marker} ${facts === '' ? m.name : `${m.name.padEnd(width)}  ${facts}`}\n`);
+      }
+    });
+
+  program
     .command('status')
     .description('Summarise the saved state of the run; runs nothing')
     .argument('[config]', 'path to the config file', 'modernizer.config.yaml')
@@ -108,13 +185,17 @@ export async function main(
   argv: readonly string[],
   io: Io,
   steps: StepRegistry | StepsFor = createBuiltInSteps,
+  clientFor: ClientFor = createModelClient,
 ): Promise<number> {
   let exitCode = 0;
   try {
     const stepsFor: StepsFor = typeof steps === 'function' ? steps : () => steps;
-    await createProgram(io, (code) => (exitCode = code), stepsFor).parseAsync([...argv], {
-      from: 'user',
-    });
+    await createProgram(io, (code) => (exitCode = code), stepsFor, clientFor).parseAsync(
+      [...argv],
+      {
+        from: 'user',
+      },
+    );
     return exitCode;
   } catch (error) {
     if (error instanceof CommanderError) {

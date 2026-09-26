@@ -78,12 +78,17 @@ export async function loadConfig(path: string): Promise<ModernizerConfig> {
 /** Command-line values that take precedence over the file. */
 export interface ConfigOverrides {
   workers?: number;
+  /** Replaces `model.default` for this run. */
+  model?: string;
 }
 
 export function applyOverrides(
   config: ModernizerConfig,
   overrides: ConfigOverrides,
 ): ModernizerConfig {
+  if (overrides.model !== undefined) {
+    config = parseConfig({ ...config, model: { ...config.model, default: overrides.model } });
+  }
   if (overrides.workers === undefined) {
     return config;
   }

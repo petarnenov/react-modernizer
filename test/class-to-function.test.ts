@@ -2,7 +2,7 @@ import { readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { ConfigError, parseConfig } from '../src/config/load.js';
-import type { ModelClient, ModelTool, ToolRunRequest } from '../src/model/client.js';
+import type { ModelClient, ModelTool, ToolRunRequest, ModelInfo } from '../src/model/client.js';
 import type { UsageMeter } from '../src/model/usage.js';
 import { runModernizer } from '../src/run/runner.js';
 import {
@@ -23,6 +23,9 @@ class ScriptedModel implements ModelClient {
   constructor(
     private readonly script: (tools: Tools, request: ToolRunRequest, cwd: string) => Promise<void>,
   ) {}
+  listModels(): Promise<ModelInfo[]> {
+    return Promise.resolve([]);
+  }
   check(): Promise<void> {
     return Promise.resolve();
   }

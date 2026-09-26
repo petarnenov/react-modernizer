@@ -29,6 +29,9 @@ node dist/bin.js plan                                      # order + graph probl
 node dist/bin.js plan --json > plan.json                   # the same, machine-readable
 node dist/bin.js run                                       # process files; commits go to branch modernizer/run
 node dist/bin.js run --workers 4 --fresh                   # more agents; ignore saved progress
+node dist/bin.js run --pick-model                          # choose the model from the provider's current list
+node dist/bin.js run --model kimi-k2.6                     # or name it; the file is not changed
+node dist/bin.js models                                    # list the provider's models now (--json)
 node dist/bin.js status                                    # done / failed / pending, and why files failed
 ```
 

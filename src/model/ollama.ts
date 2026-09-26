@@ -2,7 +2,9 @@ import { z } from 'zod';
 import type { Effort } from '../config/schema.js';
 import {
   ModelAccessError,
+  sortModels,
   type ModelClient,
+  type ModelInfo,
   type ModelTool,
   type ToolRunRequest,
   type ToolRunResult,
@@ -138,7 +140,7 @@ export class OllamaModelClient implements ModelClient {
     throw new Error(message);
   }
 
-  async check(model: string): Promise<void> {
+  async listModels(): Promise<ModelInfo[]> {
     await this.limiter.acquire();
     let listed: unknown;
     try {
@@ -147,9 +149,29 @@ export class OllamaModelClient implements ModelClient {
       if (error instanceof ModelAccessError) throw error;
       throw new ModelAccessError(error instanceof Error ? error.message : String(error));
     }
-    const names = (
-      (listed as { models?: { name?: string; model?: string }[] }).models ?? []
-    ).flatMap((m) => [m.name, m.model].filter((n): n is string => n !== undefined));
+    const entries =
+      (
+        listed as {
+          models?: { name?: string; model?: string; size?: number; modified_at?: string }[];
+        }
+      ).models ?? [];
+    return sortModels(
+      entries.flatMap((m) => {
+        const name = m.name ?? m.model;
+        if (name === undefined) return [];
+        return [
+          {
+            name,
+            ...(typeof m.size === 'number' ? { size: m.size } : {}),
+            ...(typeof m.modified_at === 'string' ? { modifiedAt: m.modified_at } : {}),
+          },
+        ];
+      }),
+    );
+  }
+
+  async check(model: string): Promise<void> {
+    const names = (await this.listModels()).map((m) => m.name);
     if (!names.includes(model)) {
       const some = [...new Set(names)].slice(0, 10).join(', ');
       throw new ModelAccessError(

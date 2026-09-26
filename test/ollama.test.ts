@@ -308,3 +308,29 @@ describe('OllamaModelClient progress', () => {
     ]);
   });
 });
+
+describe('OllamaModelClient.listModels', () => {
+  it('lists name, size and date, newest first', async () => {
+    const { ollama } = client([
+      json({
+        models: [
+          { name: 'glm-5.1', size: 2, modified_at: '2026-06-03T00:00:00Z' },
+          { name: 'glm-5.3', size: 3, modified_at: '2026-09-12T00:00:00Z' },
+          { model: 'bare' },
+        ],
+      }),
+    ]);
+
+    expect(await ollama.listModels()).toEqual([
+      { name: 'glm-5.3', size: 3, modifiedAt: '2026-09-12T00:00:00Z' },
+      { name: 'glm-5.1', size: 2, modifiedAt: '2026-06-03T00:00:00Z' },
+      { name: 'bare' },
+    ]);
+  });
+
+  it('names OLLAMA_API_KEY when there is no key', async () => {
+    const { ollama } = client([], { key: '' });
+
+    await expect(ollama.listModels()).rejects.toThrow('OLLAMA_API_KEY');
+  });
+});

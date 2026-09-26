@@ -38,8 +38,27 @@ export interface ToolRunResult {
   text: string;
 }
 
+/** A model the provider offers now. */
+export interface ModelInfo {
+  name: string;
+  /** Bytes, when the provider says. */
+  size?: number;
+  /** ISO date of the last change or release, when the provider says. */
+  modifiedAt?: string;
+}
+
+/** Newest first, then by name. */
+export function sortModels(models: ModelInfo[]): ModelInfo[] {
+  return models.sort(
+    (a, b) =>
+      (b.modifiedAt ?? '').localeCompare(a.modifiedAt ?? '') || a.name.localeCompare(b.name),
+  );
+}
+
 /** Access to the model for steps: the only way a step talks to it. */
 export interface ModelClient {
+  /** The models the provider offers now, newest first. Fails with {@link ModelAccessError} like `check`. */
+  listModels(): Promise<ModelInfo[]>;
   /** Fails with {@link ModelAccessError} when the model cannot be reached with the current credentials. */
   check(model: string): Promise<void>;
   /** Runs the model with tools until it stops calling them; usage goes to `meter`, which enforces the budget. */

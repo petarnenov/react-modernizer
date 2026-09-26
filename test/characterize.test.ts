@@ -9,6 +9,7 @@ import {
   type ModelClient,
   type ModelTool,
   type ToolRunRequest,
+  type ModelInfo,
 } from '../src/model/client.js';
 import type { UsageMeter } from '../src/model/usage.js';
 import { runModernizer } from '../src/run/runner.js';
@@ -25,6 +26,9 @@ type Script = (tools: Tools, request: ToolRunRequest) => Promise<void>;
 class ScriptedModel implements ModelClient {
   readonly requests: ToolRunRequest[] = [];
   constructor(private readonly script: Script) {}
+  listModels(): Promise<ModelInfo[]> {
+    return Promise.resolve([]);
+  }
   check(): Promise<void> {
     return Promise.resolve();
   }
@@ -275,6 +279,7 @@ describe('characterize-tests in a run', () => {
       `target: ${JSON.stringify(root)}\nsteps:\n  analyze: { enabled: false }\n  class-to-function: { enabled: false }\n  js-to-ts: { enabled: false }\n  simplify: { enabled: false }\n`,
     );
     const noAccess: ModelClient = {
+      listModels: () => Promise.resolve([]),
       check: () =>
         Promise.reject(
           new ModelAccessError('No credentials for the model API: set ANTHROPIC_API_KEY'),

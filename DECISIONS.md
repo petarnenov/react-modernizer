@@ -163,3 +163,14 @@
   A path with an ignored segment is refused rather than silently producing a blind Jest.
 - The tests used stand-in commands, not real Jest, which is why this was missed. The scratch check with real Jest is
   recorded here; it is not part of the suite, to keep `npm test` free of a Jest install.
+
+## 15. Model picker (add-model-picker, 2026-09-27)
+
+- **`listModels` on `ModelClient`:** Ollama `/api/tags` (name, size, `modified_at`; `check` now reuses it), Anthropic
+  `models.list()` (all pages). Newest first.
+- **Dependency-free picker** (`src/cli/pick.ts`): a pure reducer (type, backspace, arrows, Enter, Escape) with the
+  filter and rendering tested without a terminal; the terminal part only maps `readline` keypresses and restores raw
+  mode. Typeahead: every typed word in the name, any order, any case. Ten rows around the selection.
+- **One override path:** `--model` and the picked name go through `applyOverrides`, like `--workers`, so the file is
+  never written. Steps with their own `model` keep it, and the run says so.
+- The picker needs a TTY on stdin and stdout; progress rendering still needs only stdout.
