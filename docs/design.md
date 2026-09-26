@@ -106,6 +106,8 @@ repeating work.
 
 ## Status
 
+Behaviour that exists is specified in `openspec/specs/`; planned parts become OpenSpec changes.
+
 | Part                                         | State   |
 | -------------------------------------------- | ------- |
 | Config schema, loading, `--workers` override | done    |

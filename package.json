@@ -15,7 +15,8 @@
     "lint": "eslint . && prettier --check .",
     "format": "prettier --write .",
     "test": "vitest run",
-    "verify": "npm run typecheck && npm run lint && npm test && npm run build"
+    "verify": "npm run typecheck && npm run lint && npm test && npm run specs && npm run build",
+    "specs": "openspec validate --all --strict --no-interactive"
   },
   "dependencies": {
     "commander": "15.0.0",
@@ -24,6 +25,7 @@
   },
   "devDependencies": {
     "@eslint/js": "10.0.1",
+    "@fission-ai/openspec": "1.13.1",
     "@types/node": "26.6.3",
     "eslint": "10.11.0",
     "prettier": "3.9.9",
