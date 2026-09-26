@@ -13,8 +13,8 @@ accepting each step only when lint, `tsc` and the tests pass. Then it moves on t
 Built for large **CRA + Redux + React Router + React Query + Zustand + Jest** codebases. See
 [docs/design.md](docs/design.md) for how it works and what is still planned.
 
-> **Status:** early. Configuration, the import graph, `plan`, and the run loop (worktrees, gates, commits, resume) work.
-> No step is implemented yet, so `run` currently checks the gates only — with every step disabled.
+> **Status:** early. Configuration, the import graph, `plan`, the run loop (worktrees, gates, commits, resume) and the
+> first step, `characterize-tests`, work. The other steps are not implemented yet: disable them to run.
 
 ## Usage
 
@@ -36,6 +36,40 @@ One agent runs at a time by default (`concurrency.workers: 1`).
 Run `plan` first on a new codebase: it lists the order files would be processed in, every import that cannot be
 resolved, dynamic imports that cannot be followed, files that do not parse, and import cycles — in seconds, with no
 model calls.
+
+## Running `characterize-tests`
+
+The first step with a model: for each file it writes React Testing Library tests of what the file does **today** into
+`<Name>.characterization.test.<ext>`, runs them until they pass, and reports suspected bugs instead of fixing them. Its
+model can read the project, write only that one test file, and run only the test command.
+
+1. **Credentials:** set `ANTHROPIC_API_KEY`, or run `ant auth login`. The run checks them before the first file.
+2. **Model and cost:** `claude-sonnet-5` at effort `high` by default (`model.default`, `model.effort`; a step can
+   set its own `model`). Every file costs model calls; `budget.maxTokensPerFile` stops a runaway file, and `status`
+   shows the tokens used so far.
+3. **Pilot on a few files first:** narrow `source.include` and enable only this step:
+
+   ```yaml
+   target: ../my-cra-app
+   source:
+     include: ['src/components/Button*.jsx', 'src/utils/format*.js']
+   steps:
+     analyze: { enabled: false }
+     class-to-function: { enabled: false }
+     js-to-ts: { enabled: false }
+     simplify: { enabled: false }
+     characterize-tests:
+       helpers: [src/test-utils.js] # your renderWithProviders, if you have one
+   ```
+
+   ```sh
+   node dist/bin.js plan     # check what will be processed
+   node dist/bin.js run      # tests land on branch modernizer/run
+   node dist/bin.js status   # tokens used, reported bugs, failures and why
+   git log -p main..modernizer/run
+   ```
+
+   Review the tests by hand before widening `source.include`.
 
 ## How a run treats your repository
 

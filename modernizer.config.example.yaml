@@ -16,7 +16,11 @@ order: dependency-graph # leaves first, so types flow upwards
 
 steps:
   analyze: { enabled: true } # reports bugs, never fixes them
-  characterize-tests: { enabled: true } # pins current behaviour before anything changes
+  characterize-tests: # pins current behaviour before anything changes
+    enabled: true
+    testCommand: npx jest --ci {testFile}
+    helpers: [] # e.g. [src/test-utils.js] — renderWithProviders and friends
+    # model: claude-opus-5    # a step can use another model than model.default
   class-to-function: { enabled: true, skip: [error-boundary] }
   redux-connect-to-hooks: { enabled: false } # a separate decision
   js-to-ts: { enabled: true, codemod: ts-migrate }
@@ -51,3 +55,4 @@ batching: { by: directory, maxFiles: 40 }
 
 model:
   default: claude-sonnet-5
+  effort: high # low | medium | high | xhigh | max

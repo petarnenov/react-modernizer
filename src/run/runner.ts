@@ -65,6 +65,10 @@ export async function runModernizer(options: RunOptions): Promise<RunSummary> {
   const { config, log } = options;
   const steps = resolveSteps(config, options.steps);
   const graph = await buildGraph(config.target, config.source);
+  // Before any file: a step that cannot work (no credentials, unreachable model) stops the run here.
+  for (const step of steps) {
+    await step.preflight?.();
+  }
   const repo = await openRepository(config.target);
 
   const dirty = await git(config.target, ['status', '--porcelain', '--', '.']);
@@ -131,6 +135,7 @@ export async function runModernizer(options: RunOptions): Promise<RunSummary> {
           semaphore,
         },
         retries: config.retry.perStep,
+        tokenBudget: config.budget.maxTokensPerFile,
       });
       let commit: string | undefined;
       if (result.status === 'done' && result.commit !== undefined) {
@@ -138,7 +143,13 @@ export async function runModernizer(options: RunOptions): Promise<RunSummary> {
         if (appended.ok) {
           commit = appended.commit;
         } else {
-          result = { status: 'failed', attempts: result.attempts, reason: appended.reason };
+          result = {
+            status: 'failed',
+            attempts: result.attempts,
+            reason: appended.reason,
+            usage: result.usage,
+            bugs: result.bugs,
+          };
         }
       }
 
@@ -146,7 +157,9 @@ export async function runModernizer(options: RunOptions): Promise<RunSummary> {
         await store.record(file, {
           status: 'done',
           attempts: result.attempts,
+          usage: result.usage,
           ...(commit === undefined ? {} : { commit }),
+          ...(result.bugs.length === 0 ? {} : { bugs: result.bugs }),
         });
         log(commit === undefined ? `· ${file} (unchanged)` : `✓ ${file} ${commit.slice(0, 7)}`);
         return 'done';
@@ -155,6 +168,8 @@ export async function runModernizer(options: RunOptions): Promise<RunSummary> {
         status: 'failed',
         attempts: result.attempts,
         reason: result.reason,
+        usage: result.usage,
+        ...(result.bugs.length === 0 ? {} : { bugs: result.bugs }),
       });
       log(`✗ ${file} — ${firstLine(result.reason)}`);
       if (config.retry.onFail === 'stop') {

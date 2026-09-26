@@ -1,6 +1,8 @@
 import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import { dirname } from 'node:path';
+import type { UsageTotals } from '../model/usage.js';
 import type { Outcome } from '../orchestrator/scheduler.js';
+import type { BugReport } from '../steps/step.js';
 
 export interface FileRecord {
   status: Outcome;
@@ -9,6 +11,10 @@ export interface FileRecord {
   commit?: string;
   /** Why the file failed. */
   reason?: string;
+  /** Tokens the file's model steps used, failed attempts included. */
+  usage?: UsageTotals;
+  /** Suspected bugs the steps reported. */
+  bugs?: BugReport[];
   updatedAt: string;
 }
 

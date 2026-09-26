@@ -12,6 +12,9 @@ export const STEP_IDS = [
 
 export type StepId = (typeof STEP_IDS)[number];
 
+export const EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max'] as const;
+export type Effort = (typeof EFFORTS)[number];
+
 const DEFAULT_INCLUDE = ['src/**/*.{js,jsx}'];
 
 /** A test belongs to the file it tests; it is not a unit of work of its own. */
@@ -33,7 +36,14 @@ const stepSchema = z
 const stepsSchema = z
   .object({
     analyze: stepSchema.default({ enabled: true }),
-    'characterize-tests': stepSchema.default({ enabled: true }),
+    'characterize-tests': stepSchema
+      .extend({
+        /** What the step's model runs to execute its tests; `{testFile}` is the characterization test file. */
+        testCommand: z.string().min(1).default('npx jest --ci {testFile}'),
+        /** Test helpers the model must use, e.g. `src/test-utils.js` with `renderWithProviders`. */
+        helpers: z.array(z.string().min(1)).default([]),
+      })
+      .prefault({}),
     'class-to-function': stepSchema
       .extend({ skip: z.array(z.enum(['error-boundary'])).default(['error-boundary']) })
       .default({ enabled: true, skip: ['error-boundary'] }),
@@ -136,9 +146,14 @@ export const configSchema = z
       .strict()
       .default({ by: 'directory', maxFiles: 40 }),
     model: z
-      .object({ default: z.string().min(1).default('claude-sonnet-5') })
+      .object({
+        /** The model steps use unless a step sets its own. */
+        default: z.string().min(1).default('claude-sonnet-5'),
+        /** Reasoning effort; adaptive thinking decides how much of it to use. */
+        effort: z.enum(EFFORTS).default('high'),
+      })
       .strict()
-      .default({ default: 'claude-sonnet-5' }),
+      .prefault({}),
   })
   .strict();
 

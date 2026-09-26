@@ -38,8 +38,8 @@ function keepTail(text: string): string {
   return text.length <= OUTPUT_LIMIT ? text : `…${text.slice(-OUTPUT_LIMIT)}`;
 }
 
-/** Runs one shell command in its own process group, so a timeout stops everything it started. */
-function runCommand(
+/** Runs one shell command in its own process group, so a timeout stops everything it started. Output is capped. */
+export function runCommand(
   command: string,
   cwd: string,
   timeoutSeconds: number,

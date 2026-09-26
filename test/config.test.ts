@@ -38,6 +38,28 @@ describe('parseConfig', () => {
     expect(config.gates.commands).toHaveLength(3);
   });
 
+  it('defaults the model, effort and characterize-tests options', () => {
+    const config = parseConfig({ target: '.' });
+
+    expect(config.model).toEqual({ default: 'claude-sonnet-5', effort: 'high' });
+    expect(config.steps['characterize-tests']).toMatchObject({
+      enabled: true,
+      testCommand: 'npx jest --ci {testFile}',
+      helpers: [],
+    });
+    expect(config.steps['characterize-tests'].model).toBeUndefined();
+  });
+
+  it('lets one step use another model', () => {
+    const config = parseConfig({
+      target: '.',
+      steps: { 'characterize-tests': { model: 'claude-opus-5' } },
+    });
+
+    expect(config.steps['characterize-tests'].model).toBe('claude-opus-5');
+    expect(config.model.default).toBe('claude-sonnet-5');
+  });
+
   it('keeps gate concurrency when set apart from workers', () => {
     const config = parseConfig({ target: '.', concurrency: { workers: 8, gates: 2 } });
 
@@ -51,6 +73,7 @@ describe('parseConfig', () => {
     [{ gates: { coverage: { min: 120 } } }, 'min'],
     [{ unknownKey: true }, 'unknownKey'],
     [{ gates: { timeoutSeconds: 0 } }, 'timeoutSeconds'],
+    [{ model: { effort: 'extreme' } }, 'effort'],
     [{ git: { branch: '' } }, 'branch'],
   ])('rejects %j', (partial, mentioned) => {
     expect(() => parseConfig({ target: '.', ...partial })).toThrow(ConfigError);

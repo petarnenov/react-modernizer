@@ -50,3 +50,17 @@
   checks, and an unattended run cannot answer a signing prompt.
 - **Enabled but unimplemented steps stop `run` before it starts.** A default config therefore does not run yet;
   disabling every step gives a gates-only baseline.
+
+## 6. Model access (add-characterize-tests-step, 2026-09-26)
+
+- **`@anthropic-ai/sdk` 0.128.0**, the official SDK, with its beta tool runner and `betaZodTool` (Zod is already a
+  dependency). Not the Claude Agent SDK: its built-in Bash and file tools are exactly the freedom a step must not
+  have. Tools are ours, so what a step can touch is a property of code, not of a prompt.
+- **Default model `claude-sonnet-5` at effort `high`**, with adaptive thinking — the project owner's choice for cost
+  at this scale. Any step can name its own model. Server-side refusal fallbacks are sent only for Opus 5 and Fable
+  models.
+- **Behind `ModelClient`.** Steps never import the SDK; tests use a scripted client, so no test calls the network.
+- **The tool runner is iterated by hand** so the shared rate limit and the per-file token budget apply to every
+  request, and a refusal fails the attempt instead of being mistaken for an answer.
+- **Tokens, not dollars.** Usage is recorded per file; `budget.maxTotalCostUsd` is not enforced, because prices
+  change faster than this code should.

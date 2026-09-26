@@ -154,10 +154,54 @@ describe('processFile', () => {
     expect(result.status === 'failed' && result.reason).toContain('simplify threw: model down');
   });
 
+  it('puts back files a step may not change and fails the attempt', async () => {
+    const j = await job([]);
+    const sneaky: Step = {
+      id: 'simplify',
+      allowedChanges: (file) => [file.replace('.jsx', '.characterization.test.jsx')],
+      async run(ctx) {
+        await writeFile(join(ctx.cwd, 'src/Card.characterization.test.jsx'), '// ok\n');
+        await writeFile(join(ctx.cwd, 'src/api.js'), 'tampered\n');
+        await writeFile(join(ctx.cwd, 'src/new.js'), 'new\n');
+      },
+    };
+    const result = await processFile({ ...j, steps: [sneaky], retries: 0 });
+
+    expect(result.status).toBe('failed');
+    expect(result.status === 'failed' && result.reason).toContain(
+      'changed files it may not change (put back): src/api.js, src/new.js',
+    );
+  });
+
+  it('counts tokens of failed attempts and stops retrying when the budget is spent', async () => {
+    const calls: StepContext[] = [];
+    const spender: Step = {
+      id: 'simplify',
+      async run(ctx) {
+        calls.push(ctx);
+        ctx.usage.add({ input_tokens: 600, output_tokens: 100 });
+        ctx.report({ line: 2, reason: 'looks off by one' });
+        await appendFile(join(ctx.cwd, ctx.file), 'BROKEN\n');
+      },
+    };
+    const result = await processFile({ ...(await job([])), steps: [spender], tokenBudget: 1000 });
+
+    expect(result.status).toBe('failed');
+    expect(calls).toHaveLength(2); // the budget, not the three retries, ended it
+    expect(result.usage).toEqual({ inputTokens: 1200, outputTokens: 200 });
+    expect(result.bugs).toHaveLength(2);
+  });
+
   it('records an unchanged file as done without a commit', async () => {
     const result = await processFile(await job([fakeStep('simplify', () => '')]));
 
-    expect(result).toEqual({ status: 'done', attempts: 1, steps: ['simplify'] });
+    expect(result).toEqual({
+      status: 'done',
+      attempts: 1,
+      steps: ['simplify'],
+      usage: { inputTokens: 0, outputTokens: 0 },
+      bugs: [],
+    });
   });
 });
 
@@ -170,6 +214,20 @@ describe('runModernizer', () => {
     await expect(
       runModernizer({ config: parseConfig({ target: root }), steps: {}, log: quiet }),
     ).rejects.toThrow(StepsMissingError);
+  });
+
+  it('processes no file when a step preflight fails', async () => {
+    const root = await tempRepo(APP);
+    const calls: StepContext[] = [];
+    const step: Step = {
+      ...fakeStep('simplify', () => '', calls),
+      preflight: () => Promise.reject(new Error('no credentials')),
+    };
+
+    await expect(
+      runModernizer({ config: configFor(root), steps: { simplify: step }, log: quiet }),
+    ).rejects.toThrow('no credentials');
+    expect(calls).toHaveLength(0);
   });
 
   it('commits one file per commit on the run branch, leaves the checkout alone', async () => {
@@ -326,6 +384,26 @@ describe('run and status commands', () => {
     expect(status.stdout).toContain('src/api.js  simplify: ! grep -q BROKEN {files} failed:');
   });
 
+  it('shows tokens and reported bugs in status', async () => {
+    const root = await tempRepo(APP);
+    const config = await writeConfig(root);
+    const reporting: Step = {
+      id: 'simplify',
+      async run(ctx) {
+        ctx.usage.add({ input_tokens: 100, output_tokens: 20 });
+        if (ctx.file === 'src/Card.jsx')
+          ctx.report({ line: 2, reason: 'renders one item too few' });
+        await Promise.resolve();
+      },
+    };
+
+    await run(['run', config], { simplify: reporting });
+    const status = await run(['status', config]);
+
+    expect(status.stdout).toContain('Tokens: 360 (input 300 · output 60) · reported bugs: 1');
+    expect(status.stdout).toContain('src/Card.jsx:2  renders one item too few');
+  });
+
   it('refuses to run with the default steps, which are not implemented yet', async () => {
     const root = await tempRepo(APP);
     const config = join(root, '..', `${root.split('/').pop() ?? 'x'}-default.yaml`);
@@ -334,7 +412,9 @@ describe('run and status commands', () => {
     const result = await run(['run', config]);
 
     expect(result.code).toBe(1);
-    expect(result.stderr).toContain('not implemented yet: analyze, characterize-tests');
+    expect(result.stderr).toContain(
+      'not implemented yet: analyze, class-to-function, js-to-ts, simplify',
+    );
   });
 
   it('refuses a target outside any repository', async () => {

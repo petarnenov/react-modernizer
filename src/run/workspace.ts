@@ -139,6 +139,41 @@ export class Worktree {
     return changed;
   }
 
+  /**
+   * Paths changed since the last `stage()` — what a step just did — relative to the target. `node_modules` is not
+   * reported.
+   */
+  async unstagedChanges(): Promise<string[]> {
+    const modified = await git(this.cwd, ['diff', '--name-only', '-z', '--relative']);
+    const added = await git(this.cwd, [
+      'ls-files',
+      '--others',
+      '--exclude-standard',
+      '-z',
+      '--',
+      '.',
+      NODE_MODULES_PATHSPEC,
+    ]);
+    const paths = [...modified.stdout.split('\0'), ...added.stdout.split('\0')].filter(
+      (p) => p !== '',
+    );
+    return [...new Set(paths)].sort();
+  }
+
+  /** Puts paths back as they were at the last `stage()`: tracked files from the index, new files removed. */
+  async restore(paths: readonly string[]): Promise<void> {
+    for (const path of paths) {
+      const tracked = await git(this.cwd, ['ls-files', '--error-unmatch', '--', path], {
+        allowFailure: true,
+      });
+      if (tracked.code === 0) {
+        await git(this.cwd, ['checkout', '--', path]);
+      } else {
+        await rm(join(this.cwd, path), { recursive: true, force: true });
+      }
+    }
+  }
+
   /** The staged diff with rename detection and no context: exactly the lines the change adds and removes. */
   async stagedDiff(): Promise<string> {
     return (

@@ -1,0 +1,125 @@
+import Anthropic from '@anthropic-ai/sdk';
+import { betaZodTool } from '@anthropic-ai/sdk/helpers/beta/zod';
+import type { BetaMessage } from '@anthropic-ai/sdk/resources/beta/messages/messages';
+import {
+  ModelAccessError,
+  ModelRefusalError,
+  type ModelClient,
+  type ToolRunRequest,
+  type ToolRunResult,
+} from './client.js';
+import type { RateLimiter } from './rate-limit.js';
+import type { UsageMeter } from './usage.js';
+
+/** The part of the SDK client this uses — small enough to stub in tests. */
+export interface AnthropicLike {
+  models: { retrieve(model: string): Promise<unknown> };
+  beta: { messages: { toolRunner: Anthropic['beta']['messages']['toolRunner'] } };
+}
+
+const CREDENTIALS_HINT = 'set ANTHROPIC_API_KEY, or run `ant auth login`';
+
+/** Models with server-side refusal fallbacks on by default: the Opus 5 and Fable families. */
+function wantsFallbacks(model: string): boolean {
+  return model.startsWith('claude-opus-5') || model.startsWith('claude-fable-5');
+}
+
+function textOf(message: BetaMessage): string {
+  return message.content
+    .flatMap((block) => (block.type === 'text' ? [block.text] : []))
+    .join('\n')
+    .trim();
+}
+
+/** {@link ModelClient} over the official SDK's tool runner. */
+export class AnthropicModelClient implements ModelClient {
+  private client: AnthropicLike | undefined;
+
+  constructor(
+    private readonly limiter: RateLimiter,
+    client?: AnthropicLike,
+  ) {
+    this.client = client;
+  }
+
+  private sdk(): AnthropicLike {
+    // Created lazily: the SDK resolves credentials (API key, auth token, `ant` profile) at construction.
+    this.client ??= new Anthropic({ maxRetries: 2 });
+    return this.client;
+  }
+
+  async check(model: string): Promise<void> {
+    try {
+      await this.limiter.acquire();
+      await this.sdk().models.retrieve(model);
+    } catch (error) {
+      if (
+        error instanceof Anthropic.AuthenticationError ||
+        error instanceof Anthropic.PermissionDeniedError
+      ) {
+        throw new ModelAccessError(`The model API rejected the credentials: ${CREDENTIALS_HINT}`);
+      }
+      if (error instanceof Anthropic.NotFoundError) {
+        throw new ModelAccessError(`Model not found: ${model}`);
+      }
+      if (error instanceof Anthropic.APIError) {
+        throw new ModelAccessError(`The model API could not be reached: ${error.message}`);
+      }
+      // No credentials at all surfaces as a plain SDK error from the constructor or the request.
+      throw new ModelAccessError(
+        `No credentials for the model API (${error instanceof Error ? error.message : String(error)}): ${CREDENTIALS_HINT}`,
+      );
+    }
+  }
+
+  async runTools(request: ToolRunRequest, meter: UsageMeter): Promise<ToolRunResult> {
+    const runner = this.sdk().beta.messages.toolRunner({
+      model: request.model,
+      max_tokens: 16_000,
+      max_iterations: request.maxIterations,
+      thinking: { type: 'adaptive' },
+      output_config: { effort: request.effort },
+      // The system prompt and tool list are the same for every file: cache them.
+      system: [{ type: 'text', text: request.system, cache_control: { type: 'ephemeral' } }],
+      tools: request.tools.map((tool) =>
+        betaZodTool({
+          name: tool.name,
+          description: tool.description,
+          inputSchema: tool.inputSchema,
+          run: (input) => tool.run(input),
+        }),
+      ),
+      messages: [{ role: 'user', content: request.prompt }],
+      ...(wantsFallbacks(request.model)
+        ? { betas: ['server-side-fallback-2026-07-01'], fallbacks: 'default' as const }
+        : {}),
+    });
+
+    // Iterated by hand: each step of the iterator is one request, so the rate limit and the budget apply per request.
+    const iterator = runner[Symbol.asyncIterator]();
+    let last: BetaMessage | undefined;
+    for (;;) {
+      meter.assertWithinBudget();
+      await this.limiter.acquire();
+      const next = await iterator.next();
+      if (next.done === true) {
+        break;
+      }
+      const message = next.value;
+      meter.add(message.usage);
+      if (message.stop_reason === 'refusal') {
+        throw new ModelRefusalError(
+          `the model declined the request${message.stop_details?.category ? ` (${message.stop_details.category})` : ''}`,
+        );
+      }
+      last = message;
+    }
+    if (last === undefined) {
+      throw new Error('the model returned no response');
+    }
+    if (last.stop_reason === 'max_tokens') {
+      throw new Error('the model response was cut off at max_tokens');
+    }
+    return { text: textOf(last) };
+  }
+}

@@ -1,14 +1,16 @@
 import { Command, CommanderError, InvalidArgumentError } from 'commander';
 import { applyOverrides, ConfigError, loadConfig } from './config/load.js';
-import { STEP_IDS } from './config/schema.js';
+import { STEP_IDS, type ModernizerConfig } from './config/schema.js';
 import { buildGraph } from './graph/build.js';
 import { TargetError } from './graph/discover.js';
 import { createPlan, renderPlan } from './plan.js';
+import { ModelAccessError } from './model/client.js';
 import { RepositoryError } from './run/git.js';
 import { runModernizer, StepsMissingError } from './run/runner.js';
 import { StateError } from './run/state.js';
 import { describeStatus } from './run/status.js';
-import { builtInSteps, type StepRegistry } from './steps/step.js';
+import { createBuiltInSteps } from './steps/registry.js';
+import type { StepRegistry } from './steps/step.js';
 
 export interface Io {
   stdout: (text: string) => void;
@@ -23,7 +25,9 @@ function positiveInt(value: string): number {
   return n;
 }
 
-function createProgram(io: Io, setExit: (code: number) => void, steps: StepRegistry): Command {
+type StepsFor = (config: ModernizerConfig) => StepRegistry;
+
+function createProgram(io: Io, setExit: (code: number) => void, stepsFor: StepsFor): Command {
   const program = new Command()
     .name('react-modernizer')
     .description('Modernize a React codebase file by file: tests, class→function, JS→TS, simplify.')
@@ -67,7 +71,7 @@ function createProgram(io: Io, setExit: (code: number) => void, steps: StepRegis
       const config = applyOverrides(await loadConfig(path), options);
       const summary = await runModernizer({
         config,
-        steps,
+        steps: stepsFor(config),
         fresh: options.fresh === true,
         log: (line) => {
           io.stdout(`${line}\n`);
@@ -91,11 +95,12 @@ function createProgram(io: Io, setExit: (code: number) => void, steps: StepRegis
 export async function main(
   argv: readonly string[],
   io: Io,
-  steps: StepRegistry = builtInSteps,
+  steps: StepRegistry | StepsFor = createBuiltInSteps,
 ): Promise<number> {
   let exitCode = 0;
   try {
-    await createProgram(io, (code) => (exitCode = code), steps).parseAsync([...argv], {
+    const stepsFor: StepsFor = typeof steps === 'function' ? steps : () => steps;
+    await createProgram(io, (code) => (exitCode = code), stepsFor).parseAsync([...argv], {
       from: 'user',
     });
     return exitCode;
@@ -108,7 +113,8 @@ export async function main(
       error instanceof TargetError ||
       error instanceof RepositoryError ||
       error instanceof StepsMissingError ||
-      error instanceof StateError
+      error instanceof StateError ||
+      error instanceof ModelAccessError
     ) {
       io.stderr(`${error.message}\n`);
       return 1;
