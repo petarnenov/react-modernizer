@@ -39,7 +39,7 @@ const stepsSchema = z
     'characterize-tests': stepSchema
       .extend({
         /** What the step's model runs to execute its tests; `{testFile}` is the characterization test file. */
-        testCommand: z.string().min(1).default('npx jest --ci {testFile}'),
+        testCommand: z.string().min(1).default('{testRunner} {testFile}'),
         /** Test helpers the model must use, e.g. `src/test-utils.js` with `renderWithProviders`. */
         helpers: z.array(z.string().min(1)).default([]),
       })
@@ -60,6 +60,11 @@ export const configSchema = z
   .object({
     /** Root of the codebase being modernized. Relative paths resolve against the config file. */
     target: z.string().min(1),
+    /**
+     * How the target runs its tests; `{testRunner}` in any command stands for it. Create React App runs Jest only
+     * through react-scripts, which supplies the Babel, jsdom and CSS-module setup.
+     */
+    testRunner: z.string().min(1).default('CI=true npx react-scripts test --watchAll=false'),
     source: z
       .object({
         include: z.array(z.string().min(1)).min(1).default(DEFAULT_INCLUDE),
@@ -79,7 +84,7 @@ export const configSchema = z
           .default([
             'npx eslint {files}',
             'npx tsc --noEmit --incremental',
-            'npx jest --findRelatedTests {files}',
+            '{testRunner} --findRelatedTests {files}',
           ]),
         coverage: z
           .object({ min: z.number().min(0).max(100).default(80) })

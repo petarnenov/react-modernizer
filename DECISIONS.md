@@ -64,3 +64,16 @@
   request, and a refusal fails the attempt instead of being mistaken for an answer.
 - **Tokens, not dollars.** Usage is recorded per file; `budget.maxTotalCostUsd` is not enforced, because prices
   change faster than this code should.
+
+## 7. Coverage and test protection (add-coverage-and-test-protection, 2026-09-26)
+
+- **Breaking default: `testRunner` is `CI=true npx react-scripts test --watchAll=false`.** Create React App runs Jest
+  only through `react-scripts`, which supplies Babel, jsdom and CSS-module handling; the earlier `npx jest` defaults
+  would have failed on the first real file. Every test command refers to it as `{testRunner}`, so a project that runs
+  Jest directly changes one setting.
+- **Line coverage, computed from Jest's `coverage-final.json`**, not `json-summary`: the uncovered line numbers are
+  what make a retry useful. Output goes to a temporary directory outside the worktree.
+- **Protection by counting the syntax tree** — test cases, `expect` calls, skip/only/todo markers — not by diffing
+  lines, which a rename or reformat would defeat.
+- **Produced test files are followed by name**, not by git's rename detection: they are new in the run, so to git a
+  `.jsx → .tsx` rename of one is just an added file.

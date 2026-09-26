@@ -1,4 +1,5 @@
 import { join } from 'node:path';
+import { withTestRunner } from '../config/commands.js';
 import { STEP_IDS, type ModernizerConfig, type StepId } from '../config/schema.js';
 import { buildGraph } from '../graph/build.js';
 import { runPool, Scheduler, type Outcome } from '../orchestrator/scheduler.js';
@@ -129,10 +130,13 @@ export async function runModernizer(options: RunOptions): Promise<RunSummary> {
         base,
         steps,
         gates: {
-          commands: config.gates.commands,
+          commands: config.gates.commands.map((c) => withTestRunner(c, config.testRunner)),
           forbid: config.gates.forbid,
           timeoutSeconds: config.gates.timeoutSeconds,
           semaphore,
+          testRunner: config.testRunner,
+          coverageMin: config.gates.coverage.min,
+          protectTestsFrom: config.gates.protectTestsFrom,
         },
         retries: config.retry.perStep,
         tokenBudget: config.budget.maxTokensPerFile,

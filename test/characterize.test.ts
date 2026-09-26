@@ -164,6 +164,10 @@ describe('instructions', () => {
     expect(prompt).toContain('Test helpers to use: src/test-utils.js');
     expect(prompt).toContain('src/Card.test.jsx');
     expect(prompt).toContain('forbidden patterns failed: toMatchSnapshot');
+    expect(prompt).not.toContain('must cover');
+    expect(
+      buildPrompt({ file: 'a.js', testPath: 'a.t.js', helpers: [], coverageMin: 80 }),
+    ).toContain('The tests must cover at least 80% of the file');
   });
 });
 
@@ -184,7 +188,8 @@ describe('characterize-tests in a run', () => {
         simplify: { enabled: false },
         'characterize-tests': { testCommand: 'grep -q expect {testFile}', helpers },
       },
-      gates: { commands: ['test -f {files}'] },
+      // Coverage has its own tests; here it would need a real Jest.
+      gates: { commands: ['test -f {files}'], coverage: { min: 0 } },
       retry: { perStep: 1 },
     });
   }
@@ -312,6 +317,7 @@ describe('characterize-tests in a run', () => {
         "  characterize-tests: { testCommand: 'grep -q expect {testFile}' }",
         'gates:',
         "  commands: ['test -f {files}']",
+        '  coverage: { min: 0 }',
         '',
       ].join('\n'),
     );

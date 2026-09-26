@@ -22,6 +22,8 @@ export interface PromptInput {
   file: string;
   testPath: string;
   helpers: readonly string[];
+  /** Line coverage the tests must reach; 0 when not enforced. */
+  coverageMin?: number;
   /** A colocated test that already exists; readable, never changed. */
   existingTest?: string;
   /** What the gates reported about the previous attempt. */
@@ -31,6 +33,9 @@ export interface PromptInput {
 /** The per-file task. */
 export function buildPrompt(input: PromptInput): string {
   const lines = [`File under test: ${input.file}`, `Write the tests to: ${input.testPath}`];
+  if (input.coverageMin !== undefined && input.coverageMin > 0) {
+    lines.push(`The tests must cover at least ${String(input.coverageMin)}% of the file's lines.`);
+  }
   if (input.helpers.length > 0) {
     lines.push(`Test helpers to use: ${input.helpers.join(', ')}`);
   }

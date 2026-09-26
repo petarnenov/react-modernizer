@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { applyOverrides, ConfigError, loadConfig, parseConfig } from '../src/config/load.js';
+import { withTestRunner } from '../src/config/commands.js';
 import { DEFAULT_EXCLUDE } from '../src/config/schema.js';
 
 describe('parseConfig', () => {
@@ -44,10 +45,33 @@ describe('parseConfig', () => {
     expect(config.model).toEqual({ default: 'claude-sonnet-5', effort: 'high' });
     expect(config.steps['characterize-tests']).toMatchObject({
       enabled: true,
-      testCommand: 'npx jest --ci {testFile}',
+      testCommand: '{testRunner} {testFile}',
       helpers: [],
     });
     expect(config.steps['characterize-tests'].model).toBeUndefined();
+  });
+
+  it('runs tests through react-scripts by default, everywhere through {testRunner}', () => {
+    const config = parseConfig({ target: '.' });
+
+    expect(config.testRunner).toBe('CI=true npx react-scripts test --watchAll=false');
+    expect(withTestRunner(config.gates.commands[2] ?? '', config.testRunner)).toBe(
+      'CI=true npx react-scripts test --watchAll=false --findRelatedTests {files}',
+    );
+    expect(config.gates.coverage.min).toBe(80);
+  });
+
+  it('lets a project that runs Jest directly change it once', () => {
+    const config = parseConfig({
+      target: '.',
+      testRunner: 'npx jest --ci',
+      gates: { coverage: { min: 0 } },
+    });
+
+    expect(withTestRunner(config.steps['characterize-tests'].testCommand, config.testRunner)).toBe(
+      'npx jest --ci {testFile}',
+    );
+    expect(config.gates.coverage.min).toBe(0);
   });
 
   it('lets one step use another model', () => {

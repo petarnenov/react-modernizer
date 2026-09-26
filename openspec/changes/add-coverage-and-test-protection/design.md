@@ -57,9 +57,15 @@ Runs after the cheaper gates, under the same semaphore and timeout.
 ### 3. Which tests, which file
 
 `Step` gains optional `producesTests(file): string[]`. The transaction collects, for the processed file, the test files
-produced so far in its pipeline and follows renames: `stage()` now also returns the source path of a rename, so
-`Card.characterization.test.jsx → .tsx` and `Card.jsx → Card.tsx` are tracked. Coverage measures the file's current
-path with its current test paths.
+produced so far in its pipeline and follows renames:
+
+- the **source file** existed at the base, so `stage()` — which now also returns a rename's source path — gives its new
+  path from git's rename detection; when git sees a delete and an add instead, it is found by name (below);
+- a **produced test file** did not exist at the base, so to git a `.jsx → .tsx` rename of it is just an added file.
+  It is found by name: the same path with another code extension (`.js`, `.jsx`, `.ts`, `.tsx`).
+
+Coverage measures the file's current path with its current test paths. _(Changed during implementation: the design
+first assumed git's rename detection would follow the test files too; it cannot, since they are new in the run.)_
 
 ### 4. Protection by counting with the TypeScript parser
 

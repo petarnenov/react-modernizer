@@ -28,6 +28,8 @@ export interface Step {
   run(context: StepContext): Promise<void>;
   /** The only paths (relative to the target) the step may change for `file`; anything else fails the attempt. */
   allowedChanges?(file: string): string[];
+  /** Test files the step writes for `file`; they count for coverage and can be protected from later steps. */
+  producesTests?(file: string): string[];
   /** Checked once before the first file, e.g. that the model can be reached. */
   preflight?(): Promise<void>;
 }

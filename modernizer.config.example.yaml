@@ -4,6 +4,10 @@
 
 target: ../my-cra-app
 
+# How the target runs its tests; `{testRunner}` in any command below stands for it.
+# Create React App runs Jest only through react-scripts. A project running Jest directly: npx jest --ci
+testRunner: CI=true npx react-scripts test --watchAll=false
+
 source:
   include: ['src/**/*.{js,jsx}']
   exclude: # setting this replaces the defaults below
@@ -18,7 +22,7 @@ steps:
   analyze: { enabled: true } # reports bugs, never fixes them
   characterize-tests: # pins current behaviour before anything changes
     enabled: true
-    testCommand: npx jest --ci {testFile}
+    testCommand: '{testRunner} {testFile}'
     helpers: [] # e.g. [src/test-utils.js] — renderWithProviders and friends
     # model: claude-opus-5    # a step can use another model than model.default
   class-to-function: { enabled: true, skip: [error-boundary] }
@@ -30,7 +34,7 @@ gates:
   commands:
     - npx eslint {files}
     - npx tsc --noEmit --incremental
-    - npx jest --findRelatedTests {files}
+    - '{testRunner} --findRelatedTests {files}'
   coverage: { min: 80 }
   forbid: [': any', 'as any', '@ts-ignore', '@ts-nocheck', 'eslint-disable', 'toMatchSnapshot']
   protectTestsFrom: characterize-tests

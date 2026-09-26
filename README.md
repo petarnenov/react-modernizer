@@ -71,6 +71,17 @@ model can read the project, write only that one test file, and run only the test
 
    Review the tests by hand before widening `source.include`.
 
+## Tests, coverage and protection
+
+- **One test runner.** `testRunner` (default `CI=true npx react-scripts test --watchAll=false`) is how every command
+  runs your tests — the test gate, `characterize-tests`, and the coverage gate refer to it as `{testRunner}`. Create
+  React App only runs Jest through `react-scripts`; a project that runs Jest directly sets `testRunner: npx jest --ci`.
+- **Coverage gate.** Once a file has characterization tests, their line coverage of the file must reach
+  `gates.coverage.min` (80%; `0` turns it off). A failure names the uncovered lines, and the step retries with them.
+- **Test protection.** After `characterize-tests` (`gates.protectTestsFrom`) passes for a file, later steps may
+  rename and type its tests, but may not delete them, lose test cases or `expect` assertions, or add `.skip`, `.only`,
+  `xit`, `it.todo` and the like.
+
 ## How a run treats your repository
 
 - Your checkout, index and current branch are never touched. Every accepted file is one commit on `modernizer/run`

@@ -1,5 +1,6 @@
 import { access } from 'node:fs/promises';
 import { join } from 'node:path';
+import { withTestRunner } from '../../config/commands.js';
 import type { ModernizerConfig } from '../../config/schema.js';
 import type { ModelClient } from '../../model/client.js';
 import type { Step } from '../step.js';
@@ -25,6 +26,7 @@ export function createCharacterizeTestsStep(config: ModernizerConfig, model: Mod
   return {
     id: 'characterize-tests',
     allowedChanges: (file) => [characterizationTestPath(file)],
+    producesTests: (file) => [characterizationTestPath(file)],
     preflight: () => model.check(modelName),
     async run(ctx) {
       const testPath = characterizationTestPath(ctx.file);
@@ -38,13 +40,14 @@ export function createCharacterizeTestsStep(config: ModernizerConfig, model: Mod
             file: ctx.file,
             testPath,
             helpers: options.helpers,
+            coverageMin: config.gates.coverage.min,
             ...((await exists(join(ctx.cwd, existing))) ? { existingTest: existing } : {}),
             ...(ctx.previousFailure === undefined ? {} : { previousFailure: ctx.previousFailure }),
           }),
           tools: createTools({
             cwd: ctx.cwd,
             testPath,
-            testCommand: options.testCommand,
+            testCommand: withTestRunner(options.testCommand, config.testRunner),
             timeoutSeconds: config.gates.timeoutSeconds,
             report: (bug) => {
               ctx.report(bug);

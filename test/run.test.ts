@@ -91,6 +91,9 @@ describe('processFile', () => {
         forbid: [': any'],
         timeoutSeconds: 30,
         semaphore: new Semaphore(1),
+        testRunner: 'true',
+        coverageMin: 0,
+        protectTestsFrom: null,
       },
       retries: 2,
     };

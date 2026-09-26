@@ -100,7 +100,7 @@ describe('workspace', () => {
     const { rename } = await import('node:fs/promises');
     await rename(join(w1.cwd, 'src/a.js'), join(w1.cwd, 'src/a.tsx'));
 
-    expect(await w1.stage()).toEqual([{ status: 'R', path: 'src/a.tsx' }]);
+    expect(await w1.stage()).toEqual([{ status: 'R', path: 'src/a.tsx', from: 'src/a.js' }]);
     await w1.reset(tip);
     await w1.stage();
     expect(await w1.commit('nothing')).toBeUndefined();

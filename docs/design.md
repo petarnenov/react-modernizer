@@ -122,5 +122,5 @@ Behaviour that exists is specified in `openspec/specs/`; planned parts become Op
 | Step: characterize-tests                        | done    |
 | Steps: analyze, class→function, JS→TS, simplify | planned |
 | Gates: commands, timeout, forbidden patterns    | done    |
-| Gates: coverage, test protection                | planned |
+| Gates: coverage, test protection                | done    |
 | Reports and PR batching                         | planned |

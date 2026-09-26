@@ -95,6 +95,8 @@ export interface ChangedFile {
   status: string;
   /** Path relative to the target. */
   path: string;
+  /** For a rename, where it came from (relative to the target). */
+  from?: string;
 }
 
 /** One worker's isolated copy of the repository. */
@@ -130,11 +132,15 @@ export class Worktree {
     const changed: ChangedFile[] = [];
     for (let i = 0; i < parts.length;) {
       const status = parts[i++] ?? '';
-      if (status.startsWith('R') || status.startsWith('C')) {
-        i++; // source path; the destination follows
-      }
+      // A rename or copy lists its source first, then its destination.
+      const from =
+        status.startsWith('R') || status.startsWith('C') ? (parts[i++] ?? '') : undefined;
       const path = parts[i++] ?? '';
-      changed.push({ status: status.charAt(0), path });
+      changed.push(
+        from === undefined
+          ? { status: status.charAt(0), path }
+          : { status: status.charAt(0), path, from },
+      );
     }
     return changed;
   }
