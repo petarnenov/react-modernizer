@@ -64,7 +64,8 @@ the SDK). `check` calls `client.models.retrieve(model)`. `runTools` iterates the
 iteration it waits on the shared rate limiter; after each message it adds `usage` to the file's meter, stops with an
 error once the meter passes `budget.maxTokensPerFile`, and fails on `stop_reason: "refusal"`. Requests use
 `thinking: { type: "adaptive" }`, `output_config.effort` from config, top-level `cache_control` for the stable system
-prompt and tool list, and — for `claude-opus-5` and the Fable models — server-side refusal fallbacks
+prompt and tool list, and — only when a step is configured with `claude-opus-5` or a Fable model — server-side refusal
+fallbacks
 (`betas: ["server-side-fallback-2026-07-01"]`, `fallbacks: "default"`). SDK retries (2 by default) handle 429/5xx.
 
 Tests use a scripted `ModelClient` that calls the step's tools in a given order: no network, fully deterministic.
@@ -91,8 +92,9 @@ file, its test path, the helpers, the import graph neighbours, and on retries th
 
 ### 8. Model default
 
-`model.default` moves to `claude-opus-5`, with `model.effort` default `high`. The model is a per-step setting, so a
-pilot can compare a cheaper model on this step without touching the others.
+`model.default` stays `claude-sonnet-5` — chosen by the project owner for cost at this scale — with `model.effort`
+default `high`. The model is a per-step setting, so a pilot can compare `claude-opus-5` on this step without touching
+the others.
 
 ## Risks / Trade-offs
 

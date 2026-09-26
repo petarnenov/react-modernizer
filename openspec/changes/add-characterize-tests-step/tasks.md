@@ -2,7 +2,7 @@
 
 ## 1. Configuration
 
-- [ ] 1.1 Set `model.default` to `claude-opus-5`, add `model.effort`, and the `characterize-tests` options
+- [ ] 1.1 Keep `model.default` at `claude-sonnet-5`, add `model.effort` (default `high`), and the `characterize-tests` options
       `testCommand` and `helpers`; update the example config; verify config tests for "Defaults", "Per-step model"
       and "Invalid effort"
 

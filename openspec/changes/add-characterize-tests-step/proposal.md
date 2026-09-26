@@ -24,8 +24,8 @@ and a record of usage.
 - **Model access** shared by all future model steps: the official Anthropic SDK, credentials checked once before a
   run starts, a shared requests-per-minute limit, a per-file token budget that stops a step that runs away, and
   token usage recorded per file.
-- **Default model becomes `claude-opus-5`** (was `claude-sonnet-5`), with adaptive thinking, a configurable effort,
-  and server-side refusal fallbacks. The model stays a per-step setting.
+- **Default model stays `claude-sonnet-5`**, now with adaptive thinking and a configurable effort, `high` by default.
+  The model stays a per-step setting.
 - **State and `status`** record and show tokens used and bugs reported.
 
 ## Capabilities
