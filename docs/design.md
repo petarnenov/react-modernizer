@@ -112,15 +112,16 @@ again resumes; `--fresh` starts over. Requires git ≥ 2.38.
 
 Behaviour that exists is specified in `openspec/specs/`; planned parts become OpenSpec changes.
 
-| Part                                            | State   |
-| ----------------------------------------------- | ------- |
-| Config schema, loading, `--workers` override    | done    |
-| Dependency-ordered scheduler, worker pool       | done    |
-| Import graph, `plan` command                    | done    |
-| Worktrees, run branch, commits, state, resume   | done    |
-| Model access: credentials, rate, token budget   | done    |
-| Step: characterize-tests                        | done    |
-| Steps: analyze, class→function, JS→TS, simplify | planned |
-| Gates: commands, timeout, forbidden patterns    | done    |
-| Gates: coverage, test protection                | done    |
-| Reports and PR batching                         | planned |
+| Part                                          | State   |
+| --------------------------------------------- | ------- |
+| Config schema, loading, `--workers` override  | done    |
+| Dependency-ordered scheduler, worker pool     | done    |
+| Import graph, `plan` command                  | done    |
+| Worktrees, run branch, commits, state, resume | done    |
+| Model access: credentials, rate, token budget | done    |
+| Step: characterize-tests                      | done    |
+| Step: class-to-function                       | done    |
+| Steps: analyze, JS→TS, simplify               | planned |
+| Gates: commands, timeout, forbidden patterns  | done    |
+| Gates: coverage, test protection              | done    |
+| Reports and PR batching                       | planned |

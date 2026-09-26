@@ -1,5 +1,6 @@
 import { join } from 'node:path';
 import { withTestRunner } from '../config/commands.js';
+import { ConfigError } from '../config/load.js';
 import { STEP_IDS, type ModernizerConfig, type StepId } from '../config/schema.js';
 import { buildGraph } from '../graph/build.js';
 import { runPool, Scheduler, type Outcome } from '../orchestrator/scheduler.js';
@@ -45,7 +46,18 @@ export interface RunSummary {
 
 /** The enabled steps in pipeline order; refuses to go on while one has no implementation. */
 export function resolveSteps(config: ModernizerConfig, registry: StepRegistry): Step[] {
-  const enabled = STEP_IDS.filter((id) => config.steps[id].enabled);
+  const { steps } = config;
+  if (
+    steps['class-to-function'].enabled &&
+    steps['class-to-function'].requireTests &&
+    !steps['characterize-tests'].enabled
+  ) {
+    throw new ConfigError(
+      'class-to-function is enabled but characterize-tests is not: components would be converted with no tests ' +
+        'pinning their behaviour. Enable characterize-tests, or set steps.class-to-function.requireTests: false.',
+    );
+  }
+  const enabled = STEP_IDS.filter((id) => steps[id].enabled);
   const missing = enabled.filter((id) => registry[id] === undefined);
   if (missing.length > 0) {
     throw new StepsMissingError(missing);

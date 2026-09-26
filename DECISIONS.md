@@ -77,3 +77,16 @@
   lines, which a rename or reformat would defeat.
 - **Produced test files are followed by name**, not by git's rename detection: they are new in the run, so to git a
   `.jsx → .tsx` rename of one is just an added file.
+
+## 8. class-to-function (add-class-to-function-step, 2026-09-26)
+
+- **Detection by the parser, not the model.** A file with no class component — or only error boundaries — costs no
+  model call; on a large codebase most files are that.
+- **Tests are read-only in this step** (`allowedChanges: [file]`), stricter than protection: behaviour is proven by
+  exactly the tests that existed before the conversion.
+- **Post-conditions in code:** no class component left, identical export names. Failures become the retry's reason.
+- **No conversion without characterization tests** unless `requireTests: false` is set on purpose.
+- **Shared step tools** (`src/steps/shared/tools.ts`): confinement, reading, one-file writes, running one fixed test
+  command, bug reports — one implementation for every model step.
+- **Known gap:** a class that extends a project base class (`class X extends BaseComponent`) is not detected and is
+  left as it is.

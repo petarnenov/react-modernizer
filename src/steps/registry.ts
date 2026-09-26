@@ -3,6 +3,7 @@ import { AnthropicModelClient } from '../model/anthropic.js';
 import type { ModelClient } from '../model/client.js';
 import { RateLimiter } from '../model/rate-limit.js';
 import { createCharacterizeTestsStep } from './characterize-tests/step.js';
+import { createClassToFunctionStep } from './class-to-function/step.js';
 import type { StepRegistry } from './step.js';
 
 /**
@@ -17,5 +18,6 @@ export function createBuiltInSteps(
 ): StepRegistry {
   return {
     'characterize-tests': createCharacterizeTestsStep(config, model),
+    'class-to-function': createClassToFunctionStep(config, model),
   };
 }

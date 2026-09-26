@@ -45,8 +45,14 @@ const stepsSchema = z
       })
       .prefault({}),
     'class-to-function': stepSchema
-      .extend({ skip: z.array(z.enum(['error-boundary'])).default(['error-boundary']) })
-      .default({ enabled: true, skip: ['error-boundary'] }),
+      .extend({
+        skip: z.array(z.enum(['error-boundary'])).default(['error-boundary']),
+        /** What the step's model runs: the tests related to the file, characterization tests included. */
+        testCommand: z.string().min(1).default('{testRunner} --findRelatedTests {file}'),
+        /** Refuse to convert without characterization tests; turning this off is a deliberate choice. */
+        requireTests: z.boolean().default(true),
+      })
+      .prefault({}),
     // Changes how components are wired and tested — a separate decision, off unless asked for.
     'redux-connect-to-hooks': stepSchema.default({ enabled: false }),
     'js-to-ts': stepSchema

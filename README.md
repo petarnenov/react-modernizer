@@ -14,7 +14,8 @@ Built for large **CRA + Redux + React Router + React Query + Zustand + Jest** co
 [docs/design.md](docs/design.md) for how it works and what is still planned.
 
 > **Status:** early. Configuration, the import graph, `plan`, the run loop (worktrees, gates, commits, resume) and the
-> first step, `characterize-tests`, work. The other steps are not implemented yet: disable them to run.
+> first two steps, `characterize-tests` and `class-to-function`, work. `analyze`, `js-to-ts` and `simplify` are not
+> implemented yet: disable them to run.
 
 ## Usage
 
@@ -70,6 +71,26 @@ model can read the project, write only that one test file, and run only the test
    ```
 
    Review the tests by hand before widening `source.include`.
+
+## Converting class components (`class-to-function`)
+
+Runs after `characterize-tests`, in the same run. For each file with class components, a model rewrites them as
+function components with hooks — in place, still JavaScript. It can write only that file; the characterization tests
+and every related test must pass **unchanged**.
+
+- Files without class components, and error boundaries (`skip: [error-boundary]`), pass with **no model call**.
+- After the model, the file is parsed again: no class component may remain and its exports must be the same, or the
+  attempt fails with the reason.
+- It will not run without `characterize-tests` enabled, unless you set `steps.class-to-function.requireTests: false`.
+- It does not touch `connect()` or other wrappers, other files, or types.
+
+```yaml
+steps:
+  analyze: { enabled: false }
+  js-to-ts: { enabled: false }
+  simplify: { enabled: false }
+  # characterize-tests and class-to-function are on by default
+```
 
 ## Tests, coverage and protection
 
