@@ -2,7 +2,13 @@ import { mkdtemp, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { applyOverrides, ConfigError, loadConfig, parseConfig } from '../src/config/load.js';
+import {
+  applyOverrides,
+  ConfigError,
+  loadConfig,
+  parseConfig,
+  resolveTarget,
+} from '../src/config/load.js';
 import { withTestRunner } from '../src/config/commands.js';
 import { DEFAULT_EXCLUDE } from '../src/config/schema.js';
 
@@ -175,6 +181,15 @@ describe('loadConfig', () => {
     await writeFile(file, 'target: [unclosed\n');
 
     await expect(loadConfig(file)).rejects.toThrow(`Cannot parse config ${file}`);
+  });
+
+  it('resolves a home-relative target against the home directory', () => {
+    expect(resolveTarget('~/geowealth/WebContent/react/app', '/etc/cfg', '/Users/pat')).toBe(
+      '/Users/pat/geowealth/WebContent/react/app',
+    );
+    expect(resolveTarget('~', '/etc/cfg', '/Users/pat')).toBe('/Users/pat');
+    expect(resolveTarget('./app', '/etc/cfg', '/Users/pat')).toBe('/etc/cfg/app');
+    expect(resolveTarget('/abs/app', '/etc/cfg', '/Users/pat')).toBe('/abs/app');
   });
 
   it('reports a missing file as a config error', async () => {

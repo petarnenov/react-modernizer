@@ -1,5 +1,6 @@
 import { readFile } from 'node:fs/promises';
-import { dirname, resolve } from 'node:path';
+import { homedir } from 'node:os';
+import { dirname, join, resolve } from 'node:path';
 import { parse } from 'yaml';
 import { z } from 'zod';
 import { configSchema, type ModernizerConfig } from './schema.js';
@@ -43,7 +44,18 @@ export function parseConfig(raw: unknown, source?: string): ModernizerConfig {
   return config;
 }
 
-/** Reads a YAML config file; `target` is resolved against the file's directory. */
+/** `~` and `~/…` are the home directory (YAML does not expand them); other relative paths are the config's directory. */
+export function resolveTarget(
+  target: string,
+  configDirectory: string,
+  home: string = homedir(),
+): string {
+  if (target === '~') return home;
+  if (target.startsWith('~/')) return join(home, target.slice(2));
+  return resolve(configDirectory, target);
+}
+
+/** Reads a YAML config file; `target` is resolved against the file's directory, or the home directory for `~`. */
 export async function loadConfig(path: string): Promise<ModernizerConfig> {
   const absolute = resolve(path);
   let text: string;
@@ -59,7 +71,7 @@ export async function loadConfig(path: string): Promise<ModernizerConfig> {
     throw new ConfigError(`Cannot parse config ${absolute}: ${(error as Error).message}`);
   }
   const config = parseConfig(raw, absolute);
-  config.target = resolve(dirname(absolute), config.target);
+  config.target = resolveTarget(config.target, dirname(absolute));
   return config;
 }
 
