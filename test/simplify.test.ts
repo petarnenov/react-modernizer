@@ -10,7 +10,7 @@ import { SYSTEM_PROMPT } from '../src/steps/simplify/instructions.js';
 import { measure, notSimpler } from '../src/steps/simplify/metrics.js';
 import { createSimplifyStep } from '../src/steps/simplify/step.js';
 import type { Step } from '../src/steps/step.js';
-import { sh, tempRepo } from './helpers/repo.js';
+import { sh, tempRepo, runStatePath } from './helpers/repo.js';
 
 type Tools = Record<string, ModelTool<never>>;
 
@@ -168,8 +168,7 @@ describe('simplify in a run', () => {
   const run = (config: ReturnType<typeof parseConfig>, step: Step) =>
     runModernizer({ config, steps: { simplify: step }, log: () => undefined });
   const reason = async (root: string, file: string) =>
-    (await loadState(join(root, '.git/modernizer/runs/modernizer__run/state.json')))?.files[file]
-      ?.reason;
+    (await loadState(runStatePath(root)))?.files[file]?.reason;
 
   it('skips a small file without a model call', async () => {
     const { config } = await setup({ 'src/small.ts': SHORT });
@@ -187,7 +186,7 @@ describe('simplify in a run', () => {
     });
 
     expect((await run(config, createSimplifyStep(config, model))).done).toBe(1);
-    expect(sh(root, 'show', 'modernizer/run:src/total.ts')).toBe(SHORT.trim());
+    expect(sh(root, 'show', 'main-modernized:src/total.ts')).toBe(SHORT.trim());
   });
 
   it('reads only the file and its tests, and names the tests', async () => {
@@ -282,6 +281,6 @@ describe('simplify in a run', () => {
     );
 
     expect((await run(config, createSimplifyStep(config, model))).done).toBe(1);
-    expect(sh(root, 'rev-list', '--count', 'main..modernizer/run')).toBe('0');
+    expect(sh(root, 'rev-list', '--count', 'main..main-modernized')).toBe('0');
   });
 });

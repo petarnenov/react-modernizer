@@ -13,7 +13,7 @@ import {
 import { buildPrompt, SYSTEM_PROMPT } from '../src/steps/class-to-function/instructions.js';
 import { createBuiltInSteps } from '../src/steps/registry.js';
 import type { Step } from '../src/steps/step.js';
-import { sh, tempRepo } from './helpers/repo.js';
+import { sh, tempRepo, runStatePath } from './helpers/repo.js';
 
 type Tools = Record<string, ModelTool<never>>;
 
@@ -225,7 +225,7 @@ describe('class-to-function in a run', () => {
 
     expect(summary.done).toBe(1);
     expect(conversions(m)).toHaveLength(0);
-    expect(sh(root, 'show', 'modernizer/run:src/Boundary.jsx')).toContain('extends Component');
+    expect(sh(root, 'show', 'main-modernized:src/Boundary.jsx')).toContain('extends Component');
   });
 
   it('converts a class component and commits the function component with the tests', async () => {
@@ -244,8 +244,8 @@ describe('class-to-function in a run', () => {
     });
 
     expect(summary.done).toBe(1);
-    expect(sh(root, 'show', 'modernizer/run:src/Card.jsx')).toBe(FUNCTION.trim());
-    expect(sh(root, 'show', 'modernizer/run:src/Card.characterization.test.jsx')).toBe(
+    expect(sh(root, 'show', 'main-modernized:src/Card.jsx')).toBe(FUNCTION.trim());
+    expect(sh(root, 'show', 'main-modernized:src/Card.characterization.test.jsx')).toBe(
       TESTS.trim(),
     );
     expect(conversions(m)[0]?.prompt).toContain('Class components to convert: Card (line 2)');
@@ -274,9 +274,9 @@ describe('class-to-function in a run', () => {
     };
 
     const summary = await runModernizer({ config: cfg, steps, log: () => undefined });
-    const state = JSON.parse(
-      await readFile(join(root, '.git/modernizer/runs/modernizer__run/state.json'), 'utf8'),
-    ) as { files: Record<string, { reason?: string }> };
+    const state = JSON.parse(await readFile(runStatePath(root), 'utf8')) as {
+      files: Record<string, { reason?: string }>;
+    };
 
     expect(summary.failed).toBe(1);
     expect(state.files['src/Card.jsx']?.reason).toContain(
@@ -321,9 +321,9 @@ describe('class-to-function in a run', () => {
       steps: createBuiltInSteps(cfg, m),
       log: () => undefined,
     });
-    const state = JSON.parse(
-      await readFile(join(root, '.git/modernizer/runs/modernizer__run/state.json'), 'utf8'),
-    ) as { files: Record<string, { reason?: string }> };
+    const state = JSON.parse(await readFile(runStatePath(root), 'utf8')) as {
+      files: Record<string, { reason?: string }>;
+    };
 
     expect(summary.failed).toBe(1);
     expect(state.files['src/Card.jsx']?.reason).toContain('missing: CardProps; added: Props');

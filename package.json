@@ -16,7 +16,8 @@
     "format": "prettier --write .",
     "test": "vitest run",
     "verify": "npm run typecheck && npm run lint && npm test && npm run specs && npm run build",
-    "specs": "openspec validate --all --strict --no-interactive"
+    "specs": "openspec validate --all --strict --no-interactive",
+    "modernize": "./modernize"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "0.128.0",

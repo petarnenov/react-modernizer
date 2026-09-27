@@ -9,7 +9,7 @@ import { runModernizer } from '../src/run/runner.js';
 import { loadState } from '../src/run/state.js';
 import { buildPrompt, SYSTEM_PROMPT } from '../src/steps/js-to-ts/instructions.js';
 import type { Importer, Step } from '../src/steps/step.js';
-import { tempRepo } from './helpers/repo.js';
+import { tempRepo, runStatePath } from './helpers/repo.js';
 
 const ONLY_SIMPLIFY = {
   analyze: { enabled: false },
@@ -183,7 +183,7 @@ describe('failure reason', () => {
 
     await runModernizer({ config, steps: { simplify: step }, log: () => undefined });
 
-    const state = await loadState(join(root, '.git/modernizer/runs/modernizer__run/state.json'));
+    const state = await loadState(runStatePath(root));
     const reason = state?.files['src/Card.js']?.reason ?? '';
     expect(reason).toContain('budget.maxTokensPerFile');
     expect(reason).toContain('last gate failure:');

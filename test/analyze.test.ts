@@ -11,7 +11,7 @@ import { SYSTEM_PROMPT } from '../src/steps/analyze/instructions.js';
 import { lintEvidence } from '../src/steps/analyze/step.js';
 import { createBuiltInSteps } from '../src/steps/registry.js';
 import type { Step } from '../src/steps/step.js';
-import { tempRepo } from './helpers/repo.js';
+import { tempRepo, runStatePath } from './helpers/repo.js';
 
 type Tools = Record<string, ModelTool<never>>;
 
@@ -68,8 +68,7 @@ function config(root: string, analyze: Record<string, unknown> = {}, gates: stri
   });
 }
 
-const stateOf = async (root: string) =>
-  loadState(join(root, '.git/modernizer/runs/modernizer__run/state.json'));
+const stateOf = async (root: string) => loadState(runStatePath(root));
 
 describe('configuration', () => {
   it('analyses every file by default with ESLint as evidence', () => {
@@ -159,7 +158,7 @@ describe('findings', () => {
     let out = '';
     const io = { stdout: (t: string) => (out += t), stderr: () => undefined };
 
-    await main(['run', yaml], io, steps);
+    await main(['run', yaml, '--files', 'all'], io, steps);
     out = '';
     await main(['status', yaml], io);
 

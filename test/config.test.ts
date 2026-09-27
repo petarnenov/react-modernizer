@@ -37,10 +37,9 @@ describe('parseConfig', () => {
     expect(source.exclude).toEqual(['src/legacy/**']);
   });
 
-  it('defaults the run branch, its base and the gate timeout', () => {
+  it('defaults the gate timeout', () => {
     const config = parseConfig({ target: '.' });
 
-    expect(config.git).toEqual({ branch: 'modernizer/run', base: 'HEAD' });
     expect(config.gates.timeoutSeconds).toBe(600);
     expect(config.gates.commands).toHaveLength(3);
   });
@@ -203,6 +202,22 @@ describe('loadConfig', () => {
       'steps.js-to-ts.codemod: removed: ts-migrate is no longer used',
     );
     expect(error.message).toContain('delete this line');
+  });
+
+  it('explains the removed branch options', () => {
+    const error = (() => {
+      try {
+        parseConfig({ target: '.', git: { branch: 'modernizer/pilot', base: 'HEAD' } });
+      } catch (e) {
+        return e as Error;
+      }
+      return new Error('expected parseConfig to fail');
+    })();
+
+    expect(error.message).toContain(
+      'git.branch: removed: runs commit to `<current branch>-modernized` — delete this line',
+    );
+    expect(error.message).toContain('git.base: removed: runs start from the current branch');
   });
 
   it('names the file when the YAML itself is broken', async () => {

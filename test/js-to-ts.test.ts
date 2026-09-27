@@ -18,7 +18,7 @@ import {
 } from '../src/steps/js-to-ts/step.js';
 import { createBuiltInSteps } from '../src/steps/registry.js';
 import type { Importer, Step } from '../src/steps/step.js';
-import { sh, tempRepo } from './helpers/repo.js';
+import { sh, tempRepo, runStatePath } from './helpers/repo.js';
 
 type Tools = Record<string, ModelTool<never>>;
 
@@ -291,10 +291,10 @@ describe('js-to-ts in a run', () => {
     const summary = await run(config, model);
 
     expect(summary.done).toBe(1);
-    expect(sh(root, 'ls-tree', '-r', '--name-only', 'modernizer/run', 'src')).toBe(
+    expect(sh(root, 'ls-tree', '-r', '--name-only', 'main-modernized', 'src')).toBe(
       'src/Card.characterization.test.tsx\nsrc/Card.tsx',
     );
-    expect(sh(root, 'show', 'modernizer/run:src/Card.tsx')).toContain('CardProps');
+    expect(sh(root, 'show', 'main-modernized:src/Card.tsx')).toContain('CardProps');
   });
 
   it('passes a file that is already TypeScript with no model call', async () => {
@@ -319,7 +319,7 @@ describe('js-to-ts in a run', () => {
     });
 
     expect((await run(config, model)).done).toBe(1);
-    expect(sh(root, 'show', 'modernizer/run:src/format.ts')).toContain('(v: unknown): string');
+    expect(sh(root, 'show', 'main-modernized:src/format.ts')).toContain('(v: unknown): string');
   });
 
   it('fails a file whose importer names its extension, without a model call', async () => {
@@ -336,7 +336,7 @@ describe('js-to-ts in a run', () => {
     });
 
     await run(config, model);
-    const state = await loadState(join(root, '.git/modernizer/runs/modernizer__run/state.json'));
+    const state = await loadState(runStatePath(root));
 
     expect(state?.files['src/Card.jsx']?.reason).toContain("src/Page.jsx imports './Card.jsx'");
     expect(model.requests.filter((r) => r.prompt.includes('src/Card'))).toHaveLength(0);
@@ -353,7 +353,7 @@ describe('js-to-ts in a run', () => {
     });
 
     const summary = await run(config, model);
-    const state = await loadState(join(root, '.git/modernizer/runs/modernizer__run/state.json'));
+    const state = await loadState(runStatePath(root));
 
     expect(summary.failed).toBe(1);
     expect(model.requests[1]?.prompt).toContain('TS7031');

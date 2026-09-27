@@ -1,20 +1,15 @@
 import { appendFile, readdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { main } from '../src/cli.js';
+import { fileSelection, main } from '../src/cli.js';
 import { parseConfig } from '../src/config/load.js';
 import type { ModernizerConfig, StepId } from '../src/config/schema.js';
 import { Semaphore } from '../src/run/gates.js';
 import { openRepository } from '../src/run/git.js';
-import { runModernizer, statePath, StepsMissingError } from '../src/run/runner.js';
+import { runModernizer, statePath, StepsMissingError, type RunOptions } from '../src/run/runner.js';
 import { emptyState, loadState, saveState } from '../src/run/state.js';
 import { processFile, type FileJob } from '../src/run/transaction.js';
-import {
-  createWorktrees,
-  RunBranch,
-  runDirectory,
-  worktreeDirectory,
-} from '../src/run/workspace.js';
+import { createWorktrees, runDirectory, worktreeDirectory } from '../src/run/workspace.js';
 import type { Step, StepContext, StepRegistry } from '../src/steps/step.js';
 import { sh, tempRepo } from './helpers/repo.js';
 
@@ -76,8 +71,7 @@ describe('processFile', () => {
   async function job(steps: Step[], files: Record<string, string> = APP): Promise<FileJob> {
     const root = await tempRepo(files);
     const repo = await openRepository(root);
-    const branch = new RunBranch(repo, 'r');
-    const base = await branch.ensure('HEAD');
+    const base = sh(root, 'rev-parse', 'HEAD');
     const [worktree] = await createWorktrees(
       repo,
       worktreeDirectory(repo, 'r'),
@@ -261,29 +255,195 @@ describe('runModernizer', () => {
     expect(calls).toHaveLength(0);
   });
 
-  it('commits one file per commit on the run branch, leaves the checkout alone', async () => {
+  it('commits one file per commit on the modernized branch, checked out, leaving main alone', async () => {
     const root = await tempRepo(APP);
-    await writeFile(join(root, 'src/api.js'), 'uncommitted user work\n');
-    const lines: string[] = [];
+    await writeFile(join(root, 'notes.txt'), 'untracked user file\n');
+    const main = sh(root, 'rev-parse', 'main');
 
-    const summary = await runModernizer({
-      config: configFor(root),
-      steps,
-      log: (l) => lines.push(l),
+    const summary = await runModernizer({ config: configFor(root), steps, log: () => undefined });
+
+    expect(summary).toMatchObject({
+      branch: 'main-modernized',
+      total: 3,
+      done: 3,
+      failed: 0,
+      remaining: 0,
+      stopped: false,
     });
-
-    expect(summary).toMatchObject({ total: 3, done: 3, failed: 0, remaining: 0, stopped: false });
-    expect(sh(root, 'log', '--format=%s', 'main..modernizer/run').split('\n')).toEqual([
+    expect(sh(root, 'log', '--format=%s', 'main..main-modernized').split('\n')).toEqual([
       'modernize: src/Page.jsx',
       'modernize: src/Card.jsx',
       'modernize: src/api.js',
     ]);
-    expect(await readFile(join(root, 'src/api.js'), 'utf8')).toBe('uncommitted user work\n');
-    expect(sh(root, 'rev-parse', '--abbrev-ref', 'HEAD')).toBe('main');
-    expect(sh(root, 'worktree', 'list').split('\n')).toHaveLength(1);
-    expect(lines.some((l) => l.startsWith('warning: the target has uncommitted changes'))).toBe(
-      true,
+    expect(sh(root, 'rev-parse', '--abbrev-ref', 'HEAD')).toBe('main-modernized');
+    expect(await readFile(join(root, 'src/api.js'), 'utf8')).toBe(
+      sh(root, 'show', 'main-modernized:src/api.js') + '\n',
     );
+    expect(sh(root, 'status', '--porcelain')).toBe('?? notes.txt');
+    expect(sh(root, 'rev-parse', 'main')).toBe(main);
+    expect(sh(root, 'worktree', 'list').split('\n')).toHaveLength(1);
+  });
+
+  it('refuses uncommitted tracked changes and a detached HEAD, creating no branch', async () => {
+    const root = await tempRepo(APP);
+    await writeFile(join(root, 'src/api.js'), 'uncommitted user work\n');
+    const run = () => runModernizer({ config: configFor(root), steps, log: () => undefined });
+
+    await expect(run()).rejects.toThrow(/uncommitted changes to tracked files:\n {2}src\/api\.js/);
+    expect(await readFile(join(root, 'src/api.js'), 'utf8')).toBe('uncommitted user work\n');
+    sh(root, 'checkout', '--quiet', '--', 'src/api.js');
+    sh(root, 'checkout', '--quiet', '--detach');
+    await expect(run()).rejects.toThrow('HEAD is detached');
+    expect(sh(root, 'branch', '--list', 'main-modernized')).toBe('');
+  });
+
+  it('continues on the modernized branch and says when main moved on', async () => {
+    const root = await tempRepo(APP);
+    const lines: string[] = [];
+    const run = () => runModernizer({ config: configFor(root), steps, log: (l) => lines.push(l) });
+    await run();
+    sh(root, 'checkout', '--quiet', 'main');
+    await writeFile(join(root, 'late.txt'), 'x\n');
+    sh(root, 'add', 'late.txt');
+    sh(root, 'commit', '--quiet', '-m', 'late');
+
+    const summary = await run();
+
+    expect(summary).toMatchObject({ branch: 'main-modernized', done: 3 });
+    expect(sh(root, 'rev-parse', '--abbrev-ref', 'HEAD')).toBe('main-modernized');
+    expect(sh(root, 'rev-list', '--count', 'main..main-modernized')).toBe('3');
+    expect(lines).toContain(
+      'main-modernized is 1 commit(s) behind main; merge it if you want them',
+    );
+  });
+
+  describe('files per run', () => {
+    const TEN = Object.fromEntries(
+      Array.from({ length: 10 }, (_, i) => [
+        `src/f${String(i)}.js`,
+        i === 0 ? 'export const f = 0;\n' : `import { f } from './f0';\nexport const g = f;\n`,
+      ]),
+    );
+    const go = (root: string, files: RunOptions['files'], workers = 1, calls: StepContext[] = []) =>
+      runModernizer({
+        config: configFor(root, { concurrency: { workers } }),
+        steps: { simplify: fakeStep('simplify', undefined, calls) },
+        log: () => undefined,
+        ...(files === undefined ? {} : { files }),
+      });
+
+    it('takes the next files in dependency order, up to the count', async () => {
+      const root = await tempRepo(TEN);
+      const calls: StepContext[] = [];
+
+      const summary = await go(root, { kind: 'count', n: 3 }, 1, calls);
+
+      expect(calls.map((c) => c.file)[0]).toBe('src/f0.js');
+      expect(summary).toMatchObject({ done: 3, remaining: 7, stopped: false, limited: true });
+    });
+
+    it('continues with the next files on the next run', async () => {
+      const root = await tempRepo(TEN);
+      const first: StepContext[] = [];
+      const second: StepContext[] = [];
+
+      await go(root, { kind: 'count', n: 3 }, 1, first);
+      const summary = await go(root, { kind: 'count', n: 3 }, 1, second);
+
+      expect(second.map((c) => c.file).filter((f) => first.some((c) => c.file === f))).toEqual([]);
+      expect(summary).toMatchObject({ done: 6, remaining: 4, limited: true });
+    });
+
+    it('never starts more files than the count, with more workers', async () => {
+      const root = await tempRepo(TEN);
+      const calls: StepContext[] = [];
+
+      const summary = await go(root, { kind: 'count', n: 2 }, 4, calls);
+
+      expect(calls).toHaveLength(2);
+      expect(summary).toMatchObject({ done: 2, remaining: 8 });
+    });
+
+    it('takes every file with all, and says nothing of a limit when fewer files remain', async () => {
+      const root = await tempRepo(APP);
+      const lines: string[] = [];
+
+      const all = await go(root, { kind: 'all' });
+      const again = await runModernizer({
+        config: configFor(root),
+        steps,
+        files: { kind: 'count', n: 50 },
+        fresh: true,
+        log: (l) => lines.push(l),
+      });
+
+      expect(all).toMatchObject({ done: 3, remaining: 0, limited: false });
+      expect(again).toMatchObject({ done: 3, remaining: 0, limited: false });
+      expect(lines.at(-1)).toMatch(/^finished: 3 done/);
+    });
+
+    it('says the limit was reached and how to go on', async () => {
+      const root = await tempRepo(APP);
+      const lines: string[] = [];
+
+      await runModernizer({
+        config: configFor(root),
+        steps,
+        files: { kind: 'count', n: 1 },
+        log: (l) => lines.push(l),
+      });
+
+      expect(lines.at(-1)).toBe(
+        'finished (limit of 1 reached): 1 done, 0 failed, 2 remaining — branch main-modernized — run again for the next',
+      );
+    });
+
+    it('processes only a named file, even with an unsettled import', async () => {
+      const root = await tempRepo(APP);
+      const calls: StepContext[] = [];
+
+      const summary = await go(root, { kind: 'path', file: 'src/Page.jsx' }, 1, calls);
+
+      expect(calls.map((c) => c.file)).toEqual(['src/Page.jsx']);
+      expect(summary).toMatchObject({ done: 1, remaining: 2, limited: false });
+    });
+
+    it('processes a named file again after it failed', async () => {
+      const root = await tempRepo(APP);
+      let broken = true;
+      const step = fakeStep('simplify', () => (broken ? 'BROKEN\n' : '// ok\n'));
+      const once = () =>
+        runModernizer({
+          config: configFor(root, { retry: { perStep: 0 } }),
+          steps: { simplify: step },
+          files: { kind: 'path', file: 'src/api.js' },
+          log: () => undefined,
+        });
+
+      expect(await once()).toMatchObject({ failed: 1 });
+      broken = false;
+      expect(await once()).toMatchObject({ done: 1, failed: 0 });
+    });
+
+    it('refuses a named file that is missing or not selected, before anything runs', async () => {
+      const root = await tempRepo({ ...APP, 'src/legacy/Old.jsx': 'export const o = 1;\n' });
+      const calls: StepContext[] = [];
+      const config = configFor(root, { source: { exclude: ['src/legacy/**'] } });
+      const named = (file: string) =>
+        runModernizer({
+          config,
+          steps: { simplify: fakeStep('simplify', undefined, calls) },
+          files: { kind: 'path', file },
+          log: () => undefined,
+        });
+
+      await expect(named('src/Nope.jsx')).rejects.toThrow('--files src/Nope.jsx: not found');
+      await expect(named('src/legacy/Old.jsx')).rejects.toThrow(
+        '--files src/legacy/Old.jsx: not selected by source.include/exclude',
+      );
+      expect(calls).toHaveLength(0);
+      expect(sh(root, 'branch', '--list', 'main-modernized')).toBe('');
+    });
   });
 
   it('with two workers still produces one commit per file', async () => {
@@ -299,9 +459,9 @@ describe('runModernizer', () => {
     const summary = await runModernizer({ config, steps, log: quiet });
 
     expect(summary.done).toBe(6);
-    expect(sh(root, 'rev-list', '--count', 'main..modernizer/run')).toBe('6');
+    expect(sh(root, 'rev-list', '--count', 'main..main-modernized')).toBe('6');
     for (let i = 0; i < 6; i++) {
-      expect(sh(root, 'show', `modernizer/run:src/f${String(i)}.js`)).toContain('// simplify');
+      expect(sh(root, 'show', `main-modernized:src/f${String(i)}.js`)).toContain('// simplify');
     }
   });
 
@@ -319,7 +479,7 @@ describe('runModernizer', () => {
     const summary = await runModernizer({ config, steps: {}, log: quiet });
 
     expect(summary).toMatchObject({ done: 3, failed: 1 });
-    expect(sh(root, 'rev-list', '--count', 'main..modernizer/run')).toBe('0');
+    expect(sh(root, 'rev-list', '--count', 'main..main-modernized')).toBe('0');
   });
 
   it('reports failures, continues, and exits zero', async () => {
@@ -353,10 +513,10 @@ describe('runModernizer', () => {
     const counting = { simplify: fakeStep('simplify', () => '// once\n', calls) };
     await runModernizer({ config: configFor(root), steps: counting, log: quiet });
     const repo = await openRepository(root);
-    const state = await loadState(statePath(runDirectory(repo, 'modernizer/run')));
+    const state = await loadState(statePath(runDirectory(repo, 'main-modernized')));
     if (state === undefined) throw new Error('no state');
     delete state.files['src/Page.jsx']; // as if interrupted before the last file
-    await saveState(statePath(runDirectory(repo, 'modernizer/run')), state);
+    await saveState(statePath(runDirectory(repo, 'main-modernized')), state);
     calls.length = 0;
 
     await runModernizer({ config: configFor(root), steps: counting, log: quiet });
@@ -405,14 +565,64 @@ describe('run and status commands', () => {
     const config = await writeConfig(root);
     const failing = fakeStep('simplify', (ctx) => (ctx.file === 'src/api.js' ? 'BROKEN\n' : ''));
 
-    const ran = await run(['run', config], { simplify: failing });
+    const ran = await run(['run', config, '--files', 'all'], { simplify: failing });
     const status = await run(['status', config]);
 
     expect(ran.code).toBe(0);
     expect(ran.stdout).toContain('✗ src/api.js');
     expect(status.code).toBe(0);
+    expect(status.stdout).toContain('Branch: main-modernized\n');
     expect(status.stdout).toContain('done: 2 · failed: 1 · pending: 0');
     expect(status.stdout).toContain('src/api.js  simplify: ! grep -q BROKEN {files} failed:');
+  });
+
+  it('processes one file by default and exits 0 at the limit', async () => {
+    const root = await tempRepo(APP);
+    const config = await writeConfig(root);
+
+    const ran = await run(['run', config], { simplify: fakeStep('simplify') });
+
+    expect(ran.code).toBe(0);
+    expect(ran.stdout).toContain('finished (limit of 1 reached): 1 done, 0 failed, 2 remaining');
+  });
+
+  it('reads --files as a count, all or a path, and refuses zero', async () => {
+    const root = await tempRepo(APP);
+    const config = await writeConfig(root);
+    const calls: StepContext[] = [];
+    const step = fakeStep('simplify', undefined, calls);
+
+    const zero = await run(['run', config, '--files', '0'], { simplify: step });
+    const missing = await run(['run', config, '--files', 'some'], { simplify: step });
+    const named = await run(['run', config, '--files', './src/Card.jsx'], { simplify: step });
+
+    expect(zero.code).not.toBe(0);
+    expect(zero.stderr).toContain('--files');
+    expect(missing.code).not.toBe(0);
+    expect(missing.stderr).toContain('--files some: not found');
+    expect(named.code).toBe(0);
+    expect(calls.map((c) => c.file)).toEqual(['src/Card.jsx']);
+    expect(fileSelection('all')).toEqual({ kind: 'all' });
+    expect(fileSelection('12')).toEqual({ kind: 'count', n: 12 });
+    expect(() => fileSelection('-3')).toThrow('positive integer');
+  });
+
+  it('keeps a separate state for each branch', async () => {
+    const root = await tempRepo(APP);
+    const config = await writeConfig(root);
+    const quiet = fakeStep('simplify', () => '');
+
+    await run(['run', config, '--files', 'all'], { simplify: quiet });
+    sh(root, 'checkout', '--quiet', '-b', 'feature/y', 'main');
+    const before = await run(['status', config]);
+    const ran = await run(['run', config, '--files', 'all'], { simplify: quiet });
+    sh(root, 'checkout', '--quiet', 'main');
+    const first = await run(['status', config]);
+
+    expect(before.stdout).toContain('Branch: feature/y-modernized (no run yet)');
+    expect(ran.stdout).toContain('finished: 3 done');
+    expect(first.stdout).toContain('Branch: main-modernized\n');
+    expect(first.stdout).toContain('done: 3 · failed: 0 · pending: 0');
   });
 
   it('shows tokens and reported bugs in status', async () => {
@@ -428,7 +638,7 @@ describe('run and status commands', () => {
       },
     };
 
-    await run(['run', config], { simplify: reporting });
+    await run(['run', config, '--files', 'all'], { simplify: reporting });
     const status = await run(['status', config]);
 
     expect(status.stdout).toContain('Tokens: 360 (input 300 · output 60) · reported bugs: 1');

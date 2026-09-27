@@ -27,3 +27,8 @@ export async function tempRepo(files: Record<string, string>): Promise<string> {
   sh(root, 'commit', '--quiet', '-m', 'initial');
   return root;
 }
+
+/** The state file of a run started from `main` in `root`. */
+export function runStatePath(root: string): string {
+  return join(root, '.git/modernizer/runs/main-modernized/state.json');
+}

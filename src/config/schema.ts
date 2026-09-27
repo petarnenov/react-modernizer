@@ -174,15 +174,6 @@ export const configSchema = z
       .strict()
       // prefault runs `{}` through the schema, so the defaults above are the only ones.
       .prefault({}),
-    git: z
-      .object({
-        /** Accepted files are committed here; the user's own branch is never touched. */
-        branch: z.string().min(1).default('modernizer/run'),
-        /** Where the run branch starts when it does not exist yet. */
-        base: z.string().min(1).default('HEAD'),
-      })
-      .strict()
-      .prefault({}),
     retry: z
       .object({
         perStep: z.number().int().min(0).max(10).default(3),

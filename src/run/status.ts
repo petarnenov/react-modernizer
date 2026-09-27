@@ -3,7 +3,7 @@ import { buildGraph } from '../graph/build.js';
 import { openRepository } from './git.js';
 import { statePath } from './runner.js';
 import { loadState } from './state.js';
-import { runDirectory } from './workspace.js';
+import { currentBranch, runBranchName, runDirectory } from './workspace.js';
 import { SEVERITIES, type BugReport, type Severity } from '../steps/step.js';
 
 const RANKS: readonly Severity[] = SEVERITIES;
@@ -16,13 +16,18 @@ function compare(a: string, b: string): number {
 export async function describeStatus(config: ModernizerConfig): Promise<string> {
   const graph = await buildGraph(config.target, config.source);
   const repo = await openRepository(config.target);
-  const state = await loadState(statePath(runDirectory(repo, config.git.branch)));
+  const current = await currentBranch(config.target);
+  const branch = current === undefined ? undefined : runBranchName(current);
+  const state =
+    branch === undefined ? undefined : await loadState(statePath(runDirectory(repo, branch)));
   const records = graph.files.map((file) => [file, state?.files[file]] as const);
   const failed = records.filter(([, r]) => r?.status === 'failed');
   const done = records.filter(([, r]) => r?.status === 'done').length;
 
   const lines = [
-    `Branch: ${config.git.branch}${state === undefined ? ' (no run yet)' : ''}`,
+    branch === undefined
+      ? 'Branch: none (HEAD is detached in the target)'
+      : `Branch: ${branch}${state === undefined ? ' (no run yet)' : ''}`,
     `Files: ${String(graph.files.length)} · done: ${String(done)} · failed: ${String(failed.length)} · ` +
       `pending: ${String(graph.files.length - done - failed.length)}`,
   ];

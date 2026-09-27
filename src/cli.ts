@@ -1,4 +1,5 @@
 import { Command, CommanderError, InvalidArgumentError } from 'commander';
+import { posix } from 'node:path';
 import { applyOverrides, ConfigError, loadConfig } from './config/load.js';
 import { STEP_IDS, type ModernizerConfig } from './config/schema.js';
 import { buildGraph } from './graph/build.js';
@@ -7,7 +8,7 @@ import { createPlan, renderPlan } from './plan.js';
 import { ModelAccessError, type ModelClient, type ModelInfo } from './model/client.js';
 import { RepositoryError } from './run/git.js';
 import { PlainProgress, TerminalProgress } from './run/progress.js';
-import { runModernizer, StepsMissingError } from './run/runner.js';
+import { runModernizer, StepsMissingError, type FileSelection } from './run/runner.js';
 import { StateError } from './run/state.js';
 import { describeStatus } from './run/status.js';
 import { createBuiltInSteps, createModelClient } from './steps/registry.js';
@@ -34,6 +35,17 @@ function providerLabel(config: ModernizerConfig): string {
   return config.model.provider === 'ollama' ? `ollama · ${config.model.baseUrl}` : 'anthropic';
 }
 
+/** `--files`: a positive count, `all`, or the path of one file relative to the target. */
+export function fileSelection(value: string): FileSelection {
+  if (value === 'all') return { kind: 'all' };
+  if (/^-?\d+$/.test(value)) {
+    const n = Number(value);
+    if (n < 1) throw new InvalidArgumentError('must be a positive integer, all, or a file path');
+    return { kind: 'count', n };
+  }
+  return { kind: 'path', file: posix.normalize(value.replaceAll('\\', '/')).replace(/^\.\//, '') };
+}
+
 function positiveInt(value: string): number {
   const n = Number(value);
   if (!Number.isInteger(n) || n < 1) {
@@ -46,6 +58,7 @@ type StepsFor = (config: ModernizerConfig) => StepRegistry;
 
 interface RunCommandOptions {
   workers?: number;
+  files?: FileSelection;
   fresh?: boolean;
   model?: string;
   pickModel?: boolean;
@@ -91,10 +104,15 @@ function createProgram(
   program
     .command('run')
     .description(
-      'Process the codebase file by file; accepted files are committed to the run branch',
+      'Process the codebase file by file; accepted files are committed to <current branch>-modernized',
     )
     .argument('[config]', 'path to the config file', 'modernizer.config.yaml')
     .option('-w, --workers <n>', 'agents running at once (overrides the file)', positiveInt)
+    .option(
+      '--files <n|all|path>',
+      'how many files to process: a number (default 1), all, or the path of one file',
+      fileSelection,
+    )
     .option('--fresh', 'discard the saved state and process every file again')
     .option('-m, --model <name>', 'model for this run (overrides model.default)')
     .option('--pick-model', "choose the model from the provider's current list")
@@ -135,6 +153,7 @@ function createProgram(
           config,
           steps: stepsFor(config),
           fresh: options.fresh === true,
+          files: options.files ?? { kind: 'count', n: 1 },
           log: (line) => {
             renderer.line(line);
           },

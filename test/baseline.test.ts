@@ -412,7 +412,9 @@ describe('gates leave nothing behind', () => {
 
     expect(summary).toMatchObject({ done: 1, failed: 0 });
     expect(attempts).toBe(2);
-    expect(sh(root, 'ls-tree', '-r', '--name-only', 'modernizer/run')).not.toContain('tsbuildinfo');
+    expect(sh(root, 'ls-tree', '-r', '--name-only', 'main-modernized')).not.toContain(
+      'tsbuildinfo',
+    );
   });
 
   it('keeps {cache} outside the worktree across files and runs', async () => {

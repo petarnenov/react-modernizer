@@ -8,19 +8,62 @@ that can be interrupted and resumed.
 
 ## Requirements
 
-### Requirement: The user's checkout is never touched
+### Requirement: Accepted files land on the modernized branch
 
-A run SHALL NOT change the target's working tree, index or current branch. Accepted files SHALL be committed to the
-run branch, which SHALL be created from `git.base` when it does not exist and continued when it does. Each worker
-SHALL work in its own git worktree. Run state SHALL be kept inside the target's git directory. Worktrees SHALL be kept
-outside the target's repository and outside any `.git`, `.hg`, `.sl` or `node_modules` directory, because tools
-such as Jest ignore files there; when the only available location is inside one, the run SHALL refuse to start and
-say why. A target that is not a git repository SHALL be refused.
+A run SHALL commit accepted files onto the run branch: `<current>-modernized`, where `<current>` is the branch
+checked out in the target when the run starts, or the current branch itself when its name already ends in
+`-modernized`. Before anything else touches the checkout, a run SHALL refuse to start, saying why, when HEAD is
+detached or when any tracked file under the target has uncommitted changes, staged or not. Untracked files SHALL NOT
+stop a run. The run SHALL then check out the run branch — created from the current branch when it does not exist,
+continued as it is when it does — and bring the checkout up to each new commit, so that accepted files are in the
+user's working tree as soon as they are accepted. The original branch SHALL NOT change. When a continued run branch
+does not contain every commit of its original branch, the run SHALL say how many commits it is behind and SHALL NOT
+merge them. When the checkout cannot take a file's commit — because the user changed the branch or a file the commit
+touches while the run was going — the file SHALL be recorded as failed with that reason and nothing in the user's
+working tree SHALL be overwritten. Each worker SHALL work in its own git worktree. Run state SHALL be kept inside the target's git
+directory. Worktrees SHALL be kept outside the target's repository and outside any `.git`, `.hg`, `.sl` or
+`node_modules` directory, because tools such as Jest ignore files there; when the only available location is inside
+one, the run SHALL refuse to start and say why. A target that is not a git repository SHALL be refused.
+
+#### Scenario: Accepted file lands on the modernized branch
+
+- **WHEN** the user has `feature/x` checked out and a run accepts `src/Card.jsx` as `src/Card.tsx`
+- **THEN** `feature/x-modernized` is created from `feature/x` and checked out, it gains the commit, `src/Card.tsx` is in the user's working tree with `src/Card.jsx` gone, and `feature/x` is unchanged
+
+#### Scenario: Existing modernized branch
+
+- **WHEN** `feature/x-modernized` already has two accepted files and the user starts a run from `feature/x`
+- **THEN** `feature/x-modernized` is checked out as it is and the run continues on it
+
+#### Scenario: Already on a modernized branch
+
+- **WHEN** the user has `feature/x-modernized` checked out and starts a run
+- **THEN** the run continues on `feature/x-modernized` and no `feature/x-modernized-modernized` is created
+
+#### Scenario: Original branch moved on
+
+- **WHEN** `feature/x` gained three commits since `feature/x-modernized` was created and a run is started from `feature/x`
+- **THEN** the run says `feature/x-modernized` is 3 commits behind `feature/x` and continues without merging them
 
 #### Scenario: Uncommitted work in the target
 
-- **WHEN** the user has uncommitted changes in the target and a run accepts files
-- **THEN** the user's changes, current branch and index are exactly as before, and the accepted files are commits on the run branch
+- **WHEN** a tracked file under the target has uncommitted changes and a run is started
+- **THEN** the run refuses to start, names the changed files, creates and checks out no branch, and nothing is processed
+
+#### Scenario: Untracked files
+
+- **WHEN** the target has only untracked files and a run is started
+- **THEN** the run starts
+
+#### Scenario: Detached HEAD
+
+- **WHEN** the target's HEAD is detached
+- **THEN** the run refuses to start, says to check out a branch, and creates no branch
+
+#### Scenario: Checkout changed during the run
+
+- **WHEN** during a run the user edits `src/Card.jsx` in the working tree and the run then accepts `src/Card.jsx`
+- **THEN** the file is recorded as failed with a reason naming the checkout, the user's edit is kept, and the run continues
 
 #### Scenario: Not a repository
 
@@ -107,14 +150,19 @@ step. With every step disabled, the run SHALL apply only the gates to each file.
 ### Requirement: State and resume
 
 After every file the run SHALL record its outcome, attempts and, for a failure, the reason, in a state file that is
-written atomically. Running again with the same run branch SHALL resume: files already done or failed SHALL NOT be
-processed again. `--fresh` SHALL discard the state and start over from the files, while keeping the run branch's
-commits.
+written atomically. The state SHALL be kept per run branch. Running again with the same run branch SHALL resume:
+files already done or failed SHALL NOT be processed again. Another run branch SHALL use its own state.
+`--fresh` SHALL discard the state and start over from the files, while keeping the commits already on the branch.
 
 #### Scenario: Resume after interruption
 
-- **WHEN** a run is interrupted after three files and is started again
+- **WHEN** a run is interrupted after three files and is started again from the same branch
 - **THEN** those three files are not processed again and the run continues with the rest
+
+#### Scenario: Other branch
+
+- **WHEN** a run on `feature/x-modernized` settled three files and the user checks out `feature/y` and starts a run
+- **THEN** the run on `feature/y-modernized` processes every file, and the state of `feature/x-modernized` is kept
 
 #### Scenario: Fresh start
 
@@ -165,13 +213,13 @@ non-zero when it stopped on a failure, and when the configuration, target or rep
 
 ### Requirement: Status command
 
-A `status` command SHALL print, from the state file, the run branch and the number of files done, failed and
-pending, and every failed file with its reason, without running anything.
+A `status` command SHALL print, from the state file of the current branch's run branch, that branch and the number
+of files done, failed and pending, and every failed file with its reason, without running anything.
 
 #### Scenario: Status after a run
 
 - **WHEN** `status` is run after a run in which one file failed
-- **THEN** it prints the counts and the failed file with its reason
+- **THEN** it prints the run branch, the counts and the failed file with its reason
 
 ### Requirement: Usage and findings in the state
 
@@ -205,3 +253,71 @@ With every step disabled, the gates SHALL still run on each file, as a baseline.
 
 - **WHEN** every step is disabled
 - **THEN** the gates run on each unchanged file
+
+### Requirement: Files per run
+
+The `run` command SHALL take `--files <n|all|path>`: a positive integer, `all`, or the path of one file relative to
+the target; a value that is neither a positive integer nor `all` SHALL be taken as a path. Without it, a run SHALL
+process one file. A run SHALL start at most that many files, taken in dependency order from the files not yet settled. Once that
+many have started, no new file SHALL start, and files already in progress SHALL finish. With `all`, every file not yet
+settled SHALL be processed. When the limit ends the run while files remain, the closing line SHALL say that the limit
+was reached and how many files remain, and the run SHALL exit as a finished run, not a stopped one. With a path, the run SHALL process only that file,
+whether or not its dependencies are settled, and SHALL process it again when it is already done or failed. A path
+that is not a file the source selection picks SHALL be refused before anything runs, naming the path and whether it
+was not found or not selected by `source.include`/`exclude`. Zero and negative numbers SHALL be refused before
+anything runs, with a message naming `--files`.
+
+#### Scenario: Default is one file
+
+- **WHEN** `run` is started without `--files` on a target with ten unsettled files
+- **THEN** exactly one file is processed, the closing line says 9 remain, and the exit code is 0
+
+#### Scenario: A number of files
+
+- **WHEN** `run --files 3` is started on a target with ten unsettled files, where `api` is imported by the others
+- **THEN** three files are processed, `api` first, and seven remain
+
+#### Scenario: Next run continues
+
+- **WHEN** a run with `--files 3` processed three files and `run --files 3` is started again
+- **THEN** the next three files are processed and the first three are not processed again
+
+#### Scenario: All files
+
+- **WHEN** `run --files all` is started
+- **THEN** every unsettled file is processed
+
+#### Scenario: Fewer files than the limit
+
+- **WHEN** `run --files 50` is started with four unsettled files
+- **THEN** the four files are processed and the closing line reports 0 remaining, without mentioning a limit
+
+#### Scenario: Several workers
+
+- **WHEN** `run --files 2 --workers 4` is started with ten unsettled files
+- **THEN** two files are processed and never more than two start
+
+#### Scenario: Invalid value
+
+- **WHEN** `run --files 0` is started
+- **THEN** the run is refused with a message naming `--files` and nothing is processed
+
+#### Scenario: One named file
+
+- **WHEN** `run --files src/Card.jsx` is started and `src/Card.jsx` imports `src/api.js`, which is not settled
+- **THEN** only `src/Card.jsx` is processed
+
+#### Scenario: Named file already settled
+
+- **WHEN** `src/Card.jsx` failed in an earlier run and `run --files src/Card.jsx` is started
+- **THEN** `src/Card.jsx` is processed again and its new outcome replaces the old one
+
+#### Scenario: Path not found
+
+- **WHEN** `run --files src/Nope.jsx` is started and there is no such file
+- **THEN** the run is refused naming `src/Nope.jsx` as not found, and nothing is processed
+
+#### Scenario: Path not selected
+
+- **WHEN** `source.exclude` is `['src/legacy/**']` and `run --files src/legacy/Old.jsx` is started
+- **THEN** the run is refused naming `src/legacy/Old.jsx` as not selected by `source.include`/`exclude`, and nothing is processed

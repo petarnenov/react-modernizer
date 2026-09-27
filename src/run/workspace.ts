@@ -1,8 +1,8 @@
 import { createHash } from 'node:crypto';
 import { lstat, mkdir, rm, symlink } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
+import { devNull, tmpdir } from 'node:os';
 import { basename, join, sep } from 'node:path';
-import { git, GitError, type Repository } from './git.js';
+import { git, GitError, RepositoryError, type Repository } from './git.js';
 
 const branchDir = (branch: string) => branch.replaceAll('/', '__');
 
@@ -39,9 +39,96 @@ export function worktreeDirectory(
 
 const NODE_MODULES_PATHSPEC = ':(exclude,glob)**/node_modules';
 
+const MODERNIZED = '-modernized';
+
+/** The branch a run commits to when `current` is checked out: `<current>-modernized`, or `current` itself when it is one. */
+export function runBranchName(current: string): string {
+  return current.endsWith(MODERNIZED) ? current : `${current}${MODERNIZED}`;
+}
+
+/** The branch checked out at `cwd`, or undefined when HEAD is detached. */
+export async function currentBranch(cwd: string): Promise<string | undefined> {
+  const head = await git(cwd, ['symbolic-ref', '--quiet', '--short', 'HEAD'], {
+    allowFailure: true,
+  });
+  return head.code === 0 ? head.stdout.trim() : undefined;
+}
+
+/** User hooks never run for the run's own checkouts and merges. */
+const NO_HOOKS = ['-c', `core.hooksPath=${devNull}`];
+
+export interface OpenedRunBranch {
+  branch: RunBranch;
+  /** The branch that was checked out when the run started. */
+  current: string;
+  /** Whether the run branch was created now. */
+  created: boolean;
+  /** The run branch's original branch and how many of its commits the run branch lacks, when it has one. */
+  behind?: { original: string; commits: number };
+}
+
+/**
+ * Checks out the run branch for the branch the target has checked out — created from it, or continued as it is.
+ * Refuses a detached HEAD and uncommitted changes to tracked files under the target before touching anything.
+ */
+export async function openRunBranch(repo: Repository, target: string): Promise<OpenedRunBranch> {
+  const current = await currentBranch(target);
+  if (current === undefined) {
+    throw new RepositoryError('HEAD is detached in the target; check out a branch, then run again');
+  }
+  const dirty = (
+    await git(target, ['status', '--porcelain', '--untracked-files=no', '--', '.'])
+  ).stdout
+    .split('\n')
+    .filter((line) => line.trim() !== '');
+  if (dirty.length > 0) {
+    throw new RepositoryError(
+      `the target has uncommitted changes to tracked files:\n${dirty.map((l) => `  ${l.slice(3)}`).join('\n')}\n` +
+        'Commit or stash them, then run again.',
+    );
+  }
+
+  const name = runBranchName(current);
+  const exists = async (branch: string) =>
+    (
+      await git(repo.root, ['rev-parse', '--verify', '--quiet', `refs/heads/${branch}`], {
+        allowFailure: true,
+      })
+    ).code === 0;
+  const created = !(await exists(name));
+  if (name !== current) {
+    const checkout = await git(
+      repo.root,
+      [...NO_HOOKS, 'checkout', '--quiet', ...(created ? ['-b', name] : [name])],
+      { allowFailure: true },
+    );
+    if (checkout.code !== 0) {
+      throw new RepositoryError(`could not check out ${name}: ${checkout.stderr.trim()}`);
+    }
+  }
+
+  const original = name.slice(0, -MODERNIZED.length);
+  let behind: OpenedRunBranch['behind'];
+  if (!created && (await exists(original))) {
+    const commits = Number(
+      (await git(repo.root, ['rev-list', '--count', `${name}..${original}`])).stdout.trim(),
+    );
+    behind = { original, commits };
+  }
+  return {
+    branch: new RunBranch(repo, name),
+    current,
+    created,
+    ...(behind === undefined ? {} : { behind }),
+  };
+}
+
 export type AppendResult = { ok: true; commit: string } | { ok: false; reason: string };
 
-/** The branch accepted files are committed to. Appends are serialised within the process. */
+/**
+ * The checked-out branch accepted files are committed to. Each commit is fast-forwarded into the user's checkout, so
+ * ref, index and working tree move together. Appends are serialised within the process.
+ */
 export class RunBranch {
   private queue: Promise<unknown> = Promise.resolve();
 
@@ -50,32 +137,16 @@ export class RunBranch {
     readonly name: string,
   ) {}
 
-  private get ref(): string {
-    return `refs/heads/${this.name}`;
-  }
-
-  /** Creates the branch at `base` unless it exists; returns its tip. */
-  async ensure(base: string): Promise<string> {
-    const existing = await git(this.repo.root, ['rev-parse', '--verify', '--quiet', this.ref], {
-      allowFailure: true,
-    });
-    if (existing.code === 0) {
-      return existing.stdout.trim();
-    }
-    const start = (
-      await git(this.repo.root, ['rev-parse', '--verify', `${base}^{commit}`])
-    ).stdout.trim();
-    await git(this.repo.root, ['update-ref', this.ref, start, '']);
-    return start;
-  }
-
   async tip(): Promise<string> {
-    return (await git(this.repo.root, ['rev-parse', '--verify', this.ref])).stdout.trim();
+    return (
+      await git(this.repo.root, ['rev-parse', '--verify', `refs/heads/${this.name}`])
+    ).stdout.trim();
   }
 
   /**
-   * Adds a worker's commit, made on top of `workerBase`, to the branch without any checkout. When the tip has moved
-   * since, the change is merged onto it with `merge-tree`; a conflict leaves the branch as it was.
+   * Adds a worker's commit, made on top of `workerBase`, to the branch. When the tip has moved since, the change is
+   * merged onto it with `merge-tree`; a conflict leaves the branch as it was. The checkout takes the commit only as a
+   * fast forward: a file the user changed meanwhile is never overwritten.
    */
   append(workerBase: string, workerCommit: string): Promise<AppendResult> {
     const next = this.queue.then(() => this.appendNow(workerBase, workerCommit));
@@ -85,6 +156,9 @@ export class RunBranch {
 
   private async appendNow(workerBase: string, workerCommit: string): Promise<AppendResult> {
     for (let attempt = 0; attempt < 5; attempt++) {
+      if ((await currentBranch(this.repo.root)) !== this.name) {
+        return { ok: false, reason: `the checkout is no longer on ${this.name}` };
+      }
       const tip = await this.tip();
       let commit = workerCommit;
       if (tip !== workerBase) {
@@ -108,12 +182,20 @@ export class RunBranch {
           })
         ).stdout.trim();
       }
-      // Compare-and-swap: only moves the branch if nobody else moved it meanwhile.
-      const moved = await git(this.repo.root, ['update-ref', this.ref, commit, tip], {
-        allowFailure: true,
-      });
+      // A fast forward only: it refuses when HEAD moved meanwhile (then retry) or when the working tree is in the way.
+      const moved = await git(
+        this.repo.root,
+        [...NO_HOOKS, 'merge', '--ff-only', '--quiet', commit],
+        {
+          allowFailure: true,
+        },
+      );
       if (moved.code === 0) {
         return { ok: true, commit };
+      }
+      if ((await this.tip()) === tip) {
+        const why = (moved.stderr.trim() || moved.stdout.trim()).split('\n').slice(0, 6).join('\n');
+        return { ok: false, reason: `the checkout cannot take the commit: ${why}` };
       }
     }
     return { ok: false, reason: 'the run branch kept moving; gave up after 5 attempts' };

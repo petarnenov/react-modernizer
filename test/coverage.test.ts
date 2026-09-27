@@ -7,9 +7,9 @@ import { Semaphore } from '../src/run/gates.js';
 import { openRepository } from '../src/run/git.js';
 import { countTests, weakening } from '../src/run/protection.js';
 import { processFile, type FileJob } from '../src/run/transaction.js';
-import { createWorktrees, RunBranch, worktreeDirectory } from '../src/run/workspace.js';
+import { createWorktrees, worktreeDirectory } from '../src/run/workspace.js';
 import type { Step, StepContext } from '../src/steps/step.js';
-import { tempRepo } from './helpers/repo.js';
+import { sh, tempRepo } from './helpers/repo.js';
 
 /**
  * A stand-in for Jest: without --coverage it passes; with it, it writes a real coverage-final.json where every
@@ -145,7 +145,7 @@ describe('coverage and protection in the pipeline', () => {
   ): Promise<FileJob & { log: string }> {
     const root = await tempRepo({ 'src/Card.jsx': SOURCE });
     const repo = await openRepository(root);
-    const base = await new RunBranch(repo, 'r').ensure('HEAD');
+    const base = sh(root, 'rev-parse', 'HEAD');
     const [worktree] = await createWorktrees(
       repo,
       worktreeDirectory(repo, 'r'),

@@ -19,6 +19,19 @@ Built for large **CRA + Redux + React Router + React Query + Zustand + Jest** co
 
 ## Usage
 
+One command pulls and rebuilds react-modernizer, pulls the target's current branch (when it has an upstream), shows
+the plan, and runs:
+
+```sh
+./modernize                                  # modernizer.config.yaml, the next file
+./modernize --files 5                        # the next 5 files
+./modernize --files src/pages/Card.jsx       # just this file
+./modernize pilot.yaml --files all -w 3      # another config; every other option goes to `run`
+```
+
+It stops at the first failure and never merges, rebases or stashes. `npm run modernize -- …` does the same. The
+steps one by one:
+
 ```sh
 npm install
 npm run build
@@ -27,8 +40,10 @@ node dist/bin.js check-config                              # validate, print wit
 node dist/bin.js check-config --workers 4                  # override concurrency
 node dist/bin.js plan                                      # order + graph problems, changes nothing
 node dist/bin.js plan --json > plan.json                   # the same, machine-readable
-node dist/bin.js run                                       # process files; commits go to branch modernizer/run
-node dist/bin.js run --workers 4 --fresh                   # more agents; ignore saved progress
+node dist/bin.js run                                       # the next file; commits go to <branch>-modernized
+node dist/bin.js run --files 20                            # the next 20 files, leaves first
+node dist/bin.js run --files src/pages/Card.jsx            # just this file, again if it was done or failed
+node dist/bin.js run --files all --workers 4 --fresh       # every file, more agents, ignore saved progress
 node dist/bin.js run --pick-model                          # choose the model from the provider's current list
 node dist/bin.js run --model kimi-k2.6                     # or name it; the file is not changed
 node dist/bin.js models                                    # list the provider's models now (--json)
@@ -67,13 +82,14 @@ npm run build
 
 ```sh
 cd /path/to/your-app
-git status                                        # clean: a run starts from the last commit, not uncommitted work
+git status                                        # clean: a run refuses uncommitted changes to tracked files
 npm ci                                            # the gates use your eslint and jest from node_modules
 CI=true npx react-scripts test --watchAll=false   # your tests must run at all
 ```
 
-A run never touches your branch or working tree: accepted files go to a `modernizer/…` branch, and its working data
-to `.git/modernizer/`.
+A run never changes your branch: it creates `<your branch>-modernized` from it, checks that out, and commits each
+accepted file there, so the files show up in your working tree as they are accepted. Its working data goes to
+`.git/modernizer/`.
 
 ### 3. Credentials
 
@@ -125,13 +141,14 @@ gates:
     - { run: 'npx eslint --format json {files}', newErrorsOnly: eslint }
     - { run: '{testRunner} --findRelatedTests {files}', newErrorsOnly: jest }
     # tsc left out: without a tsconfig.json it fails on every file
-git:
-  branch: modernizer/pilot-1
 ```
+
+In the target, start from a branch of its own, for example `git checkout -b pilot-1 main`. The run then works on
+`pilot-1-modernized`.
 
 ```sh
 node dist/bin.js check-config pilot.yaml   # must say OK
-node dist/bin.js run pilot.yaml
+./modernize pilot.yaml --files all
 node dist/bin.js status pilot.yaml
 ```
 
@@ -143,8 +160,8 @@ prompts and model text are never printed.
 Review, in the target:
 
 ```sh
-git log --stat main..modernizer/pilot-1   # one commit per file
-git show modernizer/pilot-1:src/components/Button.characterization.test.jsx
+git log --stat pilot-1..pilot-1-modernized   # one commit per file
+git show pilot-1-modernized:src/components/Button.characterization.test.jsx
 ```
 
 - **The tests:** do they check behaviour — what a user sees and does — without snapshots? Would they catch a real
@@ -164,27 +181,25 @@ When the phase 1 tests look right:
    `{ run: 'npx tsc --noEmit --incremental --tsBuildInfoFile {cache}/tsc.tsbuildinfo', newErrorsOnly: tsc }` to
    `gates.commands`. Without it, keep
    `js-to-ts: { enabled: false }`.
-2. In `pilot.yaml`, enable the steps and use a new branch:
+2. In `pilot.yaml`, enable the steps, and in the target start a new branch (`git checkout -b pilot-2 main`):
 
    ```yaml
    steps:
      class-to-function: {}
      js-to-ts: {} # only with a tsconfig.json
      simplify: {}
-   git:
-     branch: modernizer/pilot-2
    ```
 
 3. Run and review:
 
    ```sh
-   node dist/bin.js run pilot.yaml
+   ./modernize pilot.yaml --files all
    node dist/bin.js status pilot.yaml
-   git log -p main..modernizer/pilot-2
+   git log -p pilot-2..pilot-2-modernized
    ```
 
-A new branch because a run resumes from its saved state: on the phase 1 branch, those files already count as done
-and would not go through the new steps.
+A new branch because a run resumes from its saved state, kept per branch: on `pilot-1-modernized` those files
+already count as done and would not go through the new steps.
 
 Review the converted components (effects, `setState`), the types (any vague types), and whether `simplify` really
 simplified without changing meaning.
@@ -192,11 +207,13 @@ simplified without changing meaning.
 ### 7. When something goes wrong
 
 - **Interrupted** (Ctrl-C): run it again; it continues where it stopped.
-- **Start over:** `node dist/bin.js run pilot.yaml --fresh`.
+- **Start over:** `node dist/bin.js run pilot.yaml --files all --fresh`.
+- **One file again:** `node dist/bin.js run pilot.yaml --files src/pages/Card.jsx`.
 - **Clean up**, in the target:
 
   ```sh
-  git branch -D modernizer/pilot-1 modernizer/pilot-2
+  git checkout main
+  git branch -D pilot-1 pilot-1-modernized pilot-2 pilot-2-modernized
   rm -rf .git/modernizer
   ```
 
@@ -311,8 +328,10 @@ The last step: a model makes the file smaller and clearer with identical behavio
 
 ## How a run treats your repository
 
-- Your checkout, index and current branch are never touched. Every accepted file is one commit on `modernizer/run`
-  (configurable), created from `HEAD`.
+- Your branch is never changed. A run creates `<branch>-modernized` from the checked-out branch (or continues it
+  when it exists, or when it is already checked out), checks it out, and adds one commit per accepted file,
+  fast-forwarding your working tree. It refuses to start on a detached HEAD or with uncommitted changes to tracked
+  files, and a file you edit during the run is never overwritten: that file fails instead.
 - Workers use git worktrees in the system temp directory (`$TMPDIR/react-modernizer/…`), with your `node_modules`
   linked in, so the gates run your own eslint, tsc and jest. Not inside `.git`: Jest ignores every file there. Run
   state stays in `.git/modernizer/`.

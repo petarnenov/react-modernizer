@@ -235,11 +235,11 @@ describe('characterize-tests in a run', () => {
     });
 
     expect(summary).toMatchObject({ done: 2, failed: 0 });
-    expect(sh(root, 'diff', '--name-only', 'main', 'modernizer/run').split('\n')).toEqual([
+    expect(sh(root, 'diff', '--name-only', 'main', 'main-modernized').split('\n')).toEqual([
       'src/Card.characterization.test.jsx',
       'src/api.characterization.test.js',
     ]);
-    expect(sh(root, 'show', 'modernizer/run:src/Card.test.jsx')).toBe(
+    expect(sh(root, 'show', 'main-modernized:src/Card.test.jsx')).toBe(
       "test('existing', () => {});",
     );
     const cardPrompt = model.requests.find((r) => r.prompt.includes('src/Card.jsx'))?.prompt;
@@ -269,7 +269,7 @@ describe('characterize-tests in a run', () => {
     expect(summary.done).toBe(1);
     expect(model.requests).toHaveLength(2);
     expect(model.requests[1]?.prompt).toContain('forbidden patterns');
-    expect(sh(root, 'show', 'modernizer/run:src/api.characterization.test.js')).not.toContain(
+    expect(sh(root, 'show', 'main-modernized:src/api.characterization.test.js')).not.toContain(
       'toMatchSnapshot',
     );
   });
@@ -314,7 +314,7 @@ describe('characterize-tests in a run', () => {
     expect(code).toBe(1);
     expect(err).toBe('No credentials for the model API: set ANTHROPIC_API_KEY\n');
     // Refused before anything is created: no run branch, no worktrees.
-    expect(sh(root, 'branch', '--list', 'modernizer/run')).toBe('');
+    expect(sh(root, 'branch', '--list', 'main-modernized')).toBe('');
     expect(sh(root, 'worktree', 'list').split('\n')).toHaveLength(1);
   });
 

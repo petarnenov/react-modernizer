@@ -13,6 +13,8 @@ export class ConfigError extends Error {
 const REMOVED_OPTIONS: Record<string, string> = {
   'steps.js-to-ts.codemod':
     'removed: ts-migrate is no longer used, because it inserts `any` and `@ts-expect-error` — delete this line',
+  'git.branch': 'removed: runs commit to `<current branch>-modernized` — delete this line',
+  'git.base': 'removed: runs start from the current branch — delete this line',
 };
 
 function valueAt(raw: unknown, path: string): unknown {

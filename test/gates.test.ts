@@ -4,8 +4,8 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { findForbidden, runGateCommands, Semaphore, shellQuote } from '../src/run/gates.js';
 import { openRepository } from '../src/run/git.js';
-import { createWorktrees, RunBranch, worktreeDirectory } from '../src/run/workspace.js';
-import { tempRepo } from './helpers/repo.js';
+import { createWorktrees, worktreeDirectory } from '../src/run/workspace.js';
+import { sh, tempRepo } from './helpers/repo.js';
 
 const run = async (commands: string[], files: string[] = [], timeoutSeconds = 30) =>
   runGateCommands({
@@ -134,7 +134,7 @@ describe('findForbidden', () => {
       repo,
       worktreeDirectory(repo, 'r'),
       1,
-      await new RunBranch(repo, 'r').ensure('HEAD'),
+      sh(root, 'rev-parse', 'HEAD'),
       join(root, 'node_modules'),
     );
     if (w === undefined) throw new Error('worktree missing');

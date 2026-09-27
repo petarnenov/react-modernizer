@@ -1,0 +1,82 @@
+#!/usr/bin/env bash
+# One command: update and build react-modernizer, pull the target, show the plan, run.
+#
+#   ./modernize [config.yaml] [run options]
+#
+#   ./modernize                          # modernizer.config.yaml, the next file
+#   ./modernize --files 5                # the next 5 files
+#   ./modernize --files src/pages/Card.jsx
+#   ./modernize pilot.yaml --files all --workers 3
+#
+# Stops at the first failure. Never merges, rebases or stashes: a pull that is not a fast forward stops the script.
+
+# Everything is inside main, called on the last line: bash reads a script as it runs it, and the first stage may
+# rewrite this very file through `git pull`. A function is parsed whole before it starts.
+main() {
+  set -euo pipefail
+  local here
+  here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+  cd "$here"
+
+  local config=modernizer.config.yaml
+  if [[ $# -gt 0 && ( $1 == *.yaml || $1 == *.yml ) ]]; then
+    config="$1"
+    shift
+  fi
+
+  stage 'tool: pull'
+  local before after
+  before="$(git rev-parse HEAD)"
+  git pull --ff-only
+  after="$(git rev-parse HEAD)"
+
+  if [[ ! -d node_modules ]] || { [[ $before != "$after" ]] && ! git diff --quiet "$before" "$after" -- package-lock.json; }; then
+    stage 'tool: npm ci (dependencies changed)'
+    npm ci
+  fi
+
+  stage 'tool: build'
+  npm run --silent build
+
+  stage 'target: pull'
+  local target branch upstream
+  target="$(node --input-type=module -e '
+    const { loadConfig } = await import("./dist/config/load.js");
+    try {
+      console.log((await loadConfig(process.argv[1])).target);
+    } catch (error) {
+      console.error(error instanceof Error ? error.message : String(error));
+      process.exit(1);
+    }
+  ' "$config")"
+  echo "target: $target"
+  if ! branch="$(git -C "$target" symbolic-ref --quiet --short HEAD)"; then
+    echo 'target: HEAD is detached; not pulled'
+  elif ! upstream="$(git -C "$target" rev-parse --abbrev-ref --symbolic-full-name '@{u}' 2>/dev/null)"; then
+    echo "target: $branch has no upstream; not pulled"
+  else
+    echo "target: $branch ← $upstream"
+    git -C "$target" pull --ff-only
+  fi
+
+  stage 'plan'
+  node dist/bin.js plan "$config" | awk '
+    /^[A-Z].*\([0-9]+\):$/ { section = 1; shown = 0; print; next }
+    /^$/ { flush(); section = 0; print; next }
+    section { if (++shown <= 20) print; else more++; next }
+    { print }
+    END { flush() }
+    function flush() { if (more > 0) print "  … " more " more"; more = 0 }
+  '
+  echo "(all of it: node dist/bin.js plan $config)"
+
+  stage "run: $config $*"
+  node dist/bin.js run "$config" "$@"
+}
+
+stage() {
+  printf '\n==> %s\n' "$1"
+}
+
+main "$@"
+exit

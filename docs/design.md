@@ -105,9 +105,12 @@ scale `workers`.
 
 ## Run, state and resume
 
-Each worker has a git worktree of the target; accepted files are committed one per commit on the run branch
-(`git.branch`, default `modernizer/run`), merged with `git merge-tree` so parallel workers never need a checkout.
-`state.json` lives in `<git-dir>/modernizer/runs/<branch>/`; worktrees in `<temp>/react-modernizer/<repo>-<id>/<branch>/`
+Each worker has a git worktree of the target; accepted files are committed one per commit on the run branch,
+`<current branch>-modernized`, which the run creates (or continues) and checks out. A worker's commit is merged onto
+the branch with `git merge-tree` and fast-forwarded into the user's checkout with `git merge --ff-only`, so the
+original branch never moves and a file the user edits during the run is never overwritten. A run refuses a detached
+HEAD and uncommitted changes to tracked files.
+`state.json` lives in `<git-dir>/modernizer/runs/<run branch>/`; worktrees in `<temp>/react-modernizer/<repo>-<id>/<branch>/`
 — never in the user's working tree, and never under `.git`, where Jest ignores every file. Running
 again resumes; `--fresh` starts over. Requires git ≥ 2.38.
 

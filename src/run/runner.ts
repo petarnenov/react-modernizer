@@ -12,14 +12,14 @@ import { buildGraph } from '../graph/build.js';
 import { runPool, Scheduler, type Outcome } from '../orchestrator/scheduler.js';
 import type { Step, StepRegistry } from '../steps/step.js';
 import { expandCommand, runCommand, Semaphore } from './gates.js';
-import { git, openRepository } from './git.js';
+import { openRepository } from './git.js';
 import { deleteState, emptyState, loadState, StateStore } from './state.js';
 import { processFile } from './transaction.js';
 import {
   createWorktrees,
   removeWorktrees,
   worktreeDirectory,
-  RunBranch,
+  openRunBranch,
   runDirectory,
   type Worktree,
 } from './workspace.js';
@@ -34,9 +34,15 @@ export class StepsMissingError extends Error {
   }
 }
 
+/** Which files a run takes: the next `n` in dependency order, every file, or one named file. */
+export type FileSelection =
+  { kind: 'count'; n: number } | { kind: 'all' } | { kind: 'path'; file: string };
+
 export interface RunOptions {
   config: ModernizerConfig;
   steps: StepRegistry;
+  /** Which files to process; every file not yet settled when absent. The `run` command defaults to one. */
+  files?: FileSelection;
   /** Discard the saved state and process every file again. */
   fresh?: boolean;
   log: (line: string) => void;
@@ -51,6 +57,8 @@ export interface RunSummary {
   failed: number;
   remaining: number;
   stopped: boolean;
+  /** The `--files` count was reached while files remain. */
+  limited: boolean;
 }
 
 /** The enabled steps in pipeline order; refuses to go on while one has no implementation. */
@@ -135,7 +143,7 @@ function describeModel(config: ModernizerConfig): string {
     : `${config.model.default} (Anthropic)`;
 }
 
-/** Processes the target file by file. The user's checkout is never touched; accepted files land on the run branch. */
+/** Processes the target file by file; accepted files land on `<current branch>-modernized`, which is checked out. */
 export async function runModernizer(options: RunOptions): Promise<RunSummary> {
   const { config, log } = options;
   const progress = options.progress ?? (() => undefined);
@@ -154,6 +162,14 @@ export async function runModernizer(options: RunOptions): Promise<RunSummary> {
   phase(
     `import graph: ${String(graph.files.length)} files, ${String([...graph.edges.values()].reduce((n, e) => n + e.length, 0))} internal imports`,
   );
+  const selection = options.files ?? { kind: 'all' };
+  if (selection.kind === 'path' && !graph.edges.has(selection.file)) {
+    throw new ConfigError(
+      (await exists(join(config.target, selection.file)))
+        ? `--files ${selection.file}: not selected by source.include/exclude`
+        : `--files ${selection.file}: not found in ${config.target}`,
+    );
+  }
   // Before any file: a step that cannot work (no credentials, unreachable model) stops the run here.
   if (steps.some((s) => s.preflight !== undefined)) {
     phase(`checking model access: ${describeModel(config)}`);
@@ -162,36 +178,40 @@ export async function runModernizer(options: RunOptions): Promise<RunSummary> {
     await step.preflight?.();
   }
   const repo = await openRepository(config.target);
-
-  const dirty = await git(config.target, ['status', '--porcelain', '--', '.']);
-  if (dirty.stdout.trim() !== '') {
+  const opened = await openRunBranch(repo, config.target);
+  const { branch } = opened;
+  const tip = await branch.tip();
+  phase(
+    opened.created
+      ? `branch ${branch.name} (new, from ${opened.current})`
+      : `branch ${branch.name} (continued)`,
+  );
+  if (opened.behind !== undefined && opened.behind.commits > 0) {
     log(
-      'warning: the target has uncommitted changes; the run starts from the committed base, not from them',
+      `${branch.name} is ${String(opened.behind.commits)} commit(s) behind ${opened.behind.original}; ` +
+        'merge it if you want them',
     );
   }
 
-  const runDir = runDirectory(repo, config.git.branch);
+  const runDir = runDirectory(repo, branch.name);
   const path = statePath(runDir);
   if (options.fresh === true) {
     await deleteState(path);
   }
-  const store = new StateStore(
-    path,
-    (await loadState(path)) ?? emptyState(config.git.branch, config.git.base),
-  );
-
-  const branch = new RunBranch(repo, config.git.branch);
-  const tip = await branch.ensure(config.git.base);
+  const store = new StateStore(path, (await loadState(path)) ?? emptyState(branch.name, tip));
 
   // Who imports whom, across the whole project: most importers of a JavaScript file are files the run never
   // processes.
   phase('indexing importers across the project');
   const importers = await indexImporters(config.target, config.source);
 
-  const scheduler = new Scheduler(graph.edges);
+  // A named file is processed on its own, again if it was settled before; its record is replaced when it ends.
+  const scheduler = new Scheduler(
+    selection.kind === 'path' ? new Map([[selection.file, []]]) : graph.edges,
+  );
   let resumed = 0;
   for (const [file, record] of Object.entries(store.state.files)) {
-    if (graph.edges.has(file)) {
+    if (selection.kind !== 'path' && graph.edges.has(file)) {
       scheduler.settle(file, record.status);
       resumed++;
     }
@@ -204,7 +224,7 @@ export async function runModernizer(options: RunOptions): Promise<RunSummary> {
   phase(`preparing ${String(workers)} worktree${workers === 1 ? '' : 's'}`);
   const worktrees = await createWorktrees(
     repo,
-    worktreeDirectory(repo, config.git.branch),
+    worktreeDirectory(repo, branch.name),
     workers,
     tip,
     join(config.target, 'node_modules'),
@@ -223,7 +243,10 @@ export async function runModernizer(options: RunOptions): Promise<RunSummary> {
   const control = { stopped: false };
 
   let started = resumed;
+  const limit = selection.kind === 'count' ? selection.n : Infinity;
+  let begun = 0;
   const work = async (file: string): Promise<Outcome> => {
+    begun++;
     const worktree = free.pop();
     if (worktree === undefined) {
       throw new Error('no free worktree'); // cannot happen: one worktree per worker
@@ -307,7 +330,9 @@ export async function runModernizer(options: RunOptions): Promise<RunSummary> {
   };
 
   try {
-    await runPool(scheduler, workers, work, { shouldStop: () => control.stopped });
+    await runPool(scheduler, workers, work, {
+      shouldStop: () => control.stopped || begun >= limit,
+    });
   } finally {
     await removeWorktrees(repo, worktrees);
   }
@@ -316,16 +341,24 @@ export async function runModernizer(options: RunOptions): Promise<RunSummary> {
   const done = records.filter((r) => r?.status === 'done').length;
   const failed = records.filter((r) => r?.status === 'failed').length;
   const summary: RunSummary = {
-    branch: config.git.branch,
+    branch: branch.name,
     total: graph.files.length,
     done,
     failed,
     remaining: graph.files.length - done - failed,
     stopped: control.stopped,
+    limited: false,
   };
+  summary.limited = !summary.stopped && begun >= limit && summary.remaining > 0;
+  const outcome = summary.stopped
+    ? 'stopped'
+    : summary.limited
+      ? `finished (limit of ${String(limit)} reached)`
+      : 'finished';
   log(
-    `${summary.stopped ? 'stopped' : 'finished'}: ${String(done)} done, ${String(failed)} failed, ` +
-      `${String(summary.remaining)} remaining — branch ${summary.branch}`,
+    `${outcome}: ${String(done)} done, ${String(failed)} failed, ` +
+      `${String(summary.remaining)} remaining — branch ${summary.branch}` +
+      (summary.limited ? ' — run again for the next' : ''),
   );
   return summary;
 }
