@@ -83,6 +83,16 @@ describe('run branch', () => {
     expect(sh(root, 'branch', '--list', '*modernized-modernized')).toBe('');
   });
 
+  it('names uncommitted files relative to a target inside its repository', async () => {
+    const root = await tempRepo({ 'app/src/a.js': 'a\n' });
+    const target = join(root, 'app');
+    await writeFile(join(target, 'src/a.js'), 'edited\n');
+
+    await expect(openRunBranch(await openRepository(target), target)).rejects.toThrow(
+      /tracked files:\n {2}src\/a\.js\n/,
+    );
+  });
+
   it('refuses a detached HEAD and uncommitted tracked changes, creating no branch', async () => {
     const root = await tempRepo({ 'src/a.js': 'a\n' });
     const repo = await openRepository(root);

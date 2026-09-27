@@ -81,9 +81,14 @@ export async function openRunBranch(repo: Repository, target: string): Promise<O
   ).stdout
     .split('\n')
     .filter((line) => line.trim() !== '');
+  // Porcelain paths are relative to the repository root; the tool names files relative to the target.
+  const relativeToTarget = (path: string) =>
+    repo.prefix !== '' && path.startsWith(`${repo.prefix}/`)
+      ? path.slice(repo.prefix.length + 1)
+      : path;
   if (dirty.length > 0) {
     throw new RepositoryError(
-      `the target has uncommitted changes to tracked files:\n${dirty.map((l) => `  ${l.slice(3)}`).join('\n')}\n` +
+      `the target has uncommitted changes to tracked files:\n${dirty.map((l) => `  ${relativeToTarget(l.slice(3))}`).join('\n')}\n` +
         'Commit or stash them, then run again.',
     );
   }
