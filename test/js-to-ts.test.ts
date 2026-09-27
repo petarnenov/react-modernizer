@@ -247,8 +247,8 @@ describe('js-to-ts in a run', () => {
 
   async function setup(files: Record<string, string>) {
     const root = await tempRepo({
-      ...files,
       'tsconfig.json': '{ "compilerOptions": { "allowJs": true, "strict": true } }\n',
+      ...files,
     });
     const errors = join(await mkdtemp(join(tmpdir(), 'modernizer-tsc-')), 'errors');
     await writeFile(errors, '');
@@ -340,6 +340,73 @@ describe('js-to-ts in a run', () => {
 
     expect(state?.files['src/Card.jsx']?.reason).toContain("src/Page.jsx imports './Card.jsx'");
     expect(model.requests.filter((r) => r.prompt.includes('src/Card'))).toHaveLength(0);
+  });
+
+  it('fails a file whose typed path already exists, without a model call or a rename', async () => {
+    const { root, config } = await setup({
+      'src/Card.jsx': CARD,
+      'src/Card.tsx': CARD_TS,
+    });
+    const model = new ScriptedModel(() => Promise.reject(new Error('must not be called')));
+
+    expect((await run(config, model)).failed).toBe(1);
+    const state = await loadState(runStatePath(root));
+
+    expect(state?.files['src/Card.jsx']?.reason).toContain(
+      'src/Card.tsx already exists; renaming src/Card.jsx would overwrite it',
+    );
+    expect(model.requests).toHaveLength(0);
+    expect(sh(root, 'ls-tree', '-r', '--name-only', 'main-modernized', 'src')).toBe(
+      'src/Card.jsx\nsrc/Card.tsx',
+    );
+    expect(sh(root, 'show', 'main-modernized:src/Card.tsx')).toBe(CARD_TS.trim());
+  });
+
+  it('fails a file whose typed test path already exists, renaming nothing', async () => {
+    const { root, config } = await setup({
+      'src/format.js': 'export const format = (v) => String(v);\n',
+      'src/format.characterization.test.js': "test('x', () => {});\n",
+      'src/format.characterization.test.ts': "test('x', (): void => {});\n",
+    });
+    const model = new ScriptedModel(() => Promise.reject(new Error('must not be called')));
+
+    expect((await run(config, model)).failed).toBe(1);
+    const state = await loadState(runStatePath(root));
+
+    expect(state?.files['src/format.js']?.reason).toContain(
+      'src/format.characterization.test.ts already exists',
+    );
+    expect(state?.files['src/format.js']?.reason).not.toContain('src/format.ts already exists');
+    expect(model.requests).toHaveLength(0);
+    expect(sh(root, 'ls-tree', '-r', '--name-only', 'main-modernized', 'src')).toBe(
+      'src/format.characterization.test.js\nsrc/format.characterization.test.ts\nsrc/format.js',
+    );
+  });
+
+  it('fails a file that uses a member its project dependency does not declare, on every attempt, without a model call', async () => {
+    const { root, config } = await setup({
+      'tsconfig.json':
+        '{ "compilerOptions": { "allowJs": true, "strict": true, "jsx": "preserve" }, "include": ["src"] }\n',
+      'src/jsx.d.ts':
+        'declare namespace JSX {\n  interface Element {}\n  interface ElementClass { render(): unknown }\n' +
+        '  interface ElementAttributesProperty { props: {} }\n  interface IntrinsicElements { [name: string]: unknown }\n}\n',
+      'src/ComboBox.tsx':
+        'export default class ComboBox {\n  props!: {};\n  render(): unknown { return null; }\n}\n',
+      'src/Dropdown.jsx':
+        "import ComboBox from './ComboBox';\nexport default function Dropdown() {\n  return <ComboBox options={1} />;\n}\n",
+    });
+    const model = new ScriptedModel(() => Promise.reject(new Error('must not be called')));
+
+    await run(config, model);
+    const state = await loadState(runStatePath(root));
+    const record = state?.files['src/Dropdown.jsx'];
+
+    expect(record?.status).toBe('failed');
+    expect(record?.reason).toContain("src/Dropdown.tsx:3 Type '{ options: number; }'");
+    expect(record?.reason).toContain('(declared in src/ComboBox.tsx)');
+    expect(record?.reason).toContain('type these first: src/ComboBox.tsx');
+    expect(record?.attempts).toBe(2);
+    expect(model.requests).toHaveLength(0);
   });
 
   it('fails while type errors remain, and gives the retry the errors', async () => {

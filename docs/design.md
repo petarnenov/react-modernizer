@@ -34,6 +34,17 @@ the type checker and the tests pass. It is built for large codebases (thousands 
 After every step the file's gates run. On failure the model gets the gate output and retries, up to `retry.perStep`
 times; then the file is reverted and reported (`revert-and-report`) or the run stops (`stop`).
 
+### Files `js-to-ts` will not start
+
+Two cases are failed before the model is called, because no types-only change to the file can resolve them:
+
+- The typed path (`.ts`/`.tsx` of the file or of its characterization test) already exists. Renaming would overwrite
+  it; a person decides which file is current.
+- The renamed, untouched file has "does not exist" type errors (TS2339, 2551, 2353, 2554, 2555, also inside a 2322
+  chain) on a symbol declared in another project file — typically a class component without a props type. The
+  failure names the file to type first. Errors on package or library types, type mismatches, and errors on anything
+  imported from a module the same file mocks with `jest.mock`, stay with the model.
+
 ### Class → function pitfalls the step must handle
 
 - Error boundaries stay classes — React has no hook for `componentDidCatch`.

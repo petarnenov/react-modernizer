@@ -12,6 +12,7 @@ import { exportedValueNames, exportsChanged } from '../class-to-function/analysi
 import { readTools, reportBugTool, runTestsTool, writeOneFileTool } from '../shared/tools.js';
 import { checkTypesTool, typeErrors } from '../shared/typecheck.js';
 import type { Importer, Step } from '../step.js';
+import { describeMissing, missingOnDependencies } from './dependencies.js';
 import { typesOnlyDifference } from './erase.js';
 import { buildPrompt, SYSTEM_PROMPT } from './instructions.js';
 
@@ -155,9 +156,32 @@ export function createJsToTsStep(config: ModernizerConfig, model: ModelClient): 
               const testText = await readFile(join(ctx.cwd, testFrom), 'utf8');
               const testTo = typedPath(testFrom, containsJsx(testFrom, testText));
               baseline.test = { from: testFrom, to: testTo, original: testText };
-              await rename(join(ctx.cwd, testFrom), join(ctx.cwd, testTo));
             }
-            await rename(join(ctx.cwd, ctx.file), join(ctx.cwd, to));
+            // Both checked before either is renamed: a rename would silently replace an existing file.
+            const renames = [
+              { from: ctx.file, to },
+              ...(baseline.test === undefined ? [] : [baseline.test]),
+            ];
+            const taken: string[] = [];
+            for (const r of renames) {
+              if (await exists(join(ctx.cwd, r.to))) {
+                taken.push(`${r.to} already exists; renaming ${r.from} would overwrite it`);
+              }
+            }
+            if (taken.length > 0) {
+              baseline.blocked = `${taken.join(', ')} — decide which of the two is current first`;
+            } else {
+              for (const r of renames) {
+                await rename(join(ctx.cwd, r.from), join(ctx.cwd, r.to));
+              }
+              const missing = missingOnDependencies(
+                ctx.cwd,
+                renames.map((r) => r.to),
+              );
+              if (missing.length > 0) {
+                baseline.blocked = describeMissing(missing);
+              }
+            }
           }
           baselines.set(key, baseline);
         }

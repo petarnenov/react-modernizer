@@ -301,6 +301,15 @@ will not start.
 - **Strict:** no `any`, `@ts-ignore`, `@ts-expect-error` or `@ts-nocheck`; type errors in the file fail the attempt.
 - **Nothing breaks:** runtime exports stay the same (new exported types are fine); a file that another file imports
   with an explicit `.js`/`.jsx` extension fails before any model call, naming the importer.
+- **Won't overwrite:** when the typed name already exists (`Card.js` next to a `Card.tsx`, or the typed test file),
+  the file fails before any rename or model call, naming the existing file. Decide which of the two is current, delete
+  the other, and run again.
+- **Types the dependencies first:** before the model is called, the renamed file and its test are type-checked
+  against your `tsconfig.json`. When they use something another project file's types do not declare — a prop on a
+  class component without a props type, a property or an argument its type lacks — no types-only change can fix it,
+  so the file fails at once, listing each error and ending with `type these first: <files>`. Type those files (or
+  include them earlier in the run) and run again. Other type errors are left to the model, and so are errors on
+  anything the test imports from a module it mocks with `jest.mock`: that is a mock, and a cast in the test fixes it.
 - Give it your shared types: `steps.js-to-ts.helpers: [src/store/hooks.ts, src/api/types.ts]`.
 - **Tests its own test only:** the model's `run_tests` runs the file's characterization test (`{testRunner} {testFile}`),
   not `--findRelatedTests` — types cannot change what other tests see, and the gates still run the related tests once.
