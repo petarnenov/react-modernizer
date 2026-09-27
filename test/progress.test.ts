@@ -193,6 +193,21 @@ describe('PlainProgress', () => {
       findings: 2,
       changed: false,
     });
+    plain.event({
+      kind: 'retry',
+      file: 'src/a/Card.jsx',
+      step: 'js-to-ts',
+      attempt: 1,
+      reason:
+        'npx jest {files} failed:\n1 new error(s); errors that were there before are not shown:\nsrc/a.test.js › a',
+    });
+    plain.event({
+      kind: 'retry',
+      file: 'src/a/Card.jsx',
+      step: 'js-to-ts',
+      attempt: 2,
+      reason: 'js-to-ts threw: model down\nmore',
+    });
     plain.line('✓ src/a/Card.jsx abc1234');
 
     expect(out.split('\n')).toEqual([
@@ -203,6 +218,8 @@ describe('PlainProgress', () => {
       '21:05:09 [2/7] Card.jsx · read_file src/api.js',
       '21:05:09 [2/7] Card.jsx · gate npx eslint {files} ✗ 6.1s',
       '21:05:09 [2/7] Card.jsx · analyze ✓ unchanged · 2 findings (48s)',
+      '21:05:09 [2/7] Card.jsx · js-to-ts attempt 2: npx jest {files} failed: 1 new error(s); errors that were there before are not shown:',
+      '21:05:09 [2/7] Card.jsx · js-to-ts attempt 3: js-to-ts threw: model down',
       '21:05:09 ✓ src/a/Card.jsx abc1234',
       '',
     ]);

@@ -148,7 +148,7 @@ export const configSchema = z
           .default([
             { run: 'npx eslint --format json {files}', newErrorsOnly: 'eslint' },
             { run: TYPECHECK, newErrorsOnly: 'tsc' },
-            { run: '{testRunner} --findRelatedTests {files}' },
+            { run: '{testRunner} --findRelatedTests {files}', newErrorsOnly: 'jest' },
           ]),
         coverage: z
           .object({ min: z.number().min(0).max(100).default(80) })

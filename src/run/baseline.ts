@@ -1,9 +1,12 @@
 import { isAbsolute, relative, sep } from 'node:path';
 
-export const ERROR_FORMATS = ['tsc', 'eslint'] as const;
+export const ERROR_FORMATS = ['tsc', 'eslint', 'jest'] as const;
 export type ErrorFormat = (typeof ERROR_FORMATS)[number];
 
-/** One error a tool reported: where, and what — the text without the position, so moved code is the same error. */
+/**
+ * One error a tool reported: where, and what — the text without the position, so moved code is the same error. For
+ * Jest, a failing test: the test file, and the test's full title.
+ */
 export interface ReportedError {
   file: string;
   /** `TS2345 Argument of type…` or `no-unused-vars 'x' is defined…`. */
@@ -72,15 +75,73 @@ function normalise(file: string, cwds: readonly string[]): string {
 }
 
 /**
- * The errors in a tool's complete output: tsc's text, or ESLint's `--format json`. `cwds` are the directory the
- * command ran in and its real path, to make absolute paths (ESLint prints them) relative.
+ * The errors in a tool's complete output: tsc's text, ESLint's `--format json`, or Jest's default report. `cwds` are
+ * the directory the command ran in and its real path, to make absolute paths (ESLint prints them) relative.
  */
 export function parseErrors(
   format: ErrorFormat,
   output: string,
   cwds: readonly string[],
 ): ReportedError[] {
-  return format === 'tsc' ? parseTsc(output, cwds) : parseEslintJson(output, cwds);
+  switch (format) {
+    case 'tsc':
+      return parseTsc(output, cwds);
+    case 'eslint':
+      return parseEslintJson(output, cwds);
+    case 'jest':
+      return parseJest(output, cwds);
+  }
+}
+
+/** Colour codes, in case the runner colours its output despite `FORCE_COLOR=0`. */
+const ANSI = new RegExp(`${String.fromCharCode(27)}\\[[0-9;]*m`, 'g');
+const JEST_FILE = /^(PASS|FAIL) (\S+)/;
+const JEST_FAILURE = /^ {2}● (.+)$/;
+/** Lines of Jest's message kept per failing test: enough to see what was expected, not the whole DOM dump. */
+const JEST_DETAIL_LINES = 12;
+
+/**
+ * Jest's default report: a `FAIL <test file>` line, then `  ● <Describe › test>` for each failing test followed by its
+ * indented message. `● Test suite failed to run` counts as one failure of its file; `● Console` blocks are not
+ * failures. The summary Jest prints after many suites repeats every failure, so parsing stops there.
+ */
+function parseJest(output: string, cwds: readonly string[]): ReportedError[] {
+  const errors: ReportedError[] = [];
+  let file: string | undefined;
+  let failing = false;
+  let current: { error: ReportedError; lines: number } | undefined;
+  for (const raw of output.split('\n')) {
+    const line = raw.replace(ANSI, '').trimEnd();
+    if (line.startsWith('Summary of all failing tests')) break;
+    const header = JEST_FILE.exec(line);
+    if (header?.[2] !== undefined) {
+      file = normalise(header[2], cwds);
+      failing = header[1] === 'FAIL';
+      current = undefined;
+      continue;
+    }
+    const failure = JEST_FAILURE.exec(line);
+    if (failure?.[1] !== undefined) {
+      const title = failure[1].trim();
+      current = undefined;
+      if (failing && file !== undefined && title !== 'Console') {
+        const error = { file, what: title, text: `${file} › ${title}` };
+        errors.push(error);
+        current = { error, lines: 0 };
+      }
+      continue;
+    }
+    if (current === undefined || line === '') continue;
+    if (!line.startsWith(' ')) {
+      current = undefined;
+      continue;
+    }
+    if (current.lines < JEST_DETAIL_LINES) {
+      current.error.text += `\n${line}`;
+      current.lines++;
+    }
+  }
+  return errors;
 }
 
 /** `file(line,col): error TSnnnn: message`, with indented continuation lines belonging to the error above. */

@@ -52,25 +52,15 @@ const FULL_RESULT_TURNS = 2;
 
 /**
  * What is sent on request `turn`. Tool results from the last two turns go in full, older ones as a one-line note,
- * except the latest read of each of the step's own files, which always goes in full; an earlier read of the same
- * own file is superseded and becomes a note. Assistant messages older than two turns lose their `thinking`; their
- * text and tool calls stay, so every tool result still answers its call. Without this, every earlier file read,
- * test run and chain of reasoning is sent again on every turn.
+ * except the latest read of each file, which always goes in full; an earlier read of the same file is superseded and
+ * becomes a note. Assistant messages older than two turns lose their `thinking`; their text and tool calls stay, so
+ * every tool result still answers its call. Without this, every earlier file read, test run and chain of reasoning is
+ * sent again on every turn; without keeping reads, the model reads the same files again and again.
  */
-export function compact(
-  messages: readonly Recorded[],
-  turn: number,
-  ownFiles: readonly string[] = [],
-): ChatMessage[] {
-  const own = new Set(ownFiles);
+export function compact(messages: readonly Recorded[], turn: number): ChatMessage[] {
   const latestRead = new Map<string, number>();
   messages.forEach((m, i) => {
-    if (
-      m.role === 'tool' &&
-      m.tool_name === 'read_file' &&
-      m.path !== undefined &&
-      own.has(m.path)
-    ) {
+    if (m.role === 'tool' && m.path !== undefined) {
       latestRead.set(m.path, i);
     }
   });
@@ -84,11 +74,30 @@ export function compact(
       delete rest.thinking;
       return rest;
     }
-    if (path !== undefined && latestRead.has(path)) {
+    if (path !== undefined) {
       return latestRead.get(path) === i ? message : { ...message, content: note ?? '' };
     }
     return old ? { ...message, content: note ?? '' } : message;
   });
+}
+
+/**
+ * How a `read_file` result is recorded: as it is, or, when it is exactly the latest read of the same path still in
+ * the history, as a short note pointing to that read — which then stays in full, since the note has no path.
+ */
+export function recordRead(
+  messages: readonly Recorded[],
+  path: string,
+  content: string,
+): { content: string; path?: string } {
+  if (content.startsWith('Error:')) return { content };
+  const earlier = messages.findLast((m) => m.role === 'tool' && m.path === path);
+  if (earlier?.content === content && earlier.turn !== undefined) {
+    return {
+      content: `[${path} is unchanged since your read on turn ${String(earlier.turn + 1)}; that result is still above, in full]`,
+    };
+  }
+  return { content, path };
 }
 
 function argumentsOf(call: ToolCall): unknown {
@@ -267,7 +276,7 @@ export class OllamaModelClient implements ModelClient {
       request.progress?.({ kind: 'model-turn', turn: turn + 1 });
       last = (await this.request('/api/chat', {
         model: request.model,
-        messages: compact(messages, turn, request.ownFiles),
+        messages: compact(messages, turn),
         tools,
         stream: false,
         think: thinkLevel(request.effort),
@@ -290,13 +299,13 @@ export class OllamaModelClient implements ModelClient {
           typeof (input as { path?: unknown } | undefined)?.path === 'string'
             ? (input as { path: string }).path
             : undefined;
+        const content = await runCall(byName.get(call.function.name), call, request.progress);
         messages.push({
           role: 'tool',
           tool_name: call.function.name,
-          content: await runCall(byName.get(call.function.name), call, request.progress),
+          ...(readPath === undefined ? { content } : recordRead(messages, readPath, content)),
           turn,
           note: `[earlier result of ${call.function.name}${detail === undefined ? '' : ` ${detail}`} omitted — call it again if you need it]`,
-          ...(readPath === undefined ? {} : { path: readPath }),
         });
       }
     }

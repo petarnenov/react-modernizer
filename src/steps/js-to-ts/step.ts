@@ -223,7 +223,6 @@ export function createJsToTsStep(config: ModernizerConfig, model: ModelClient): 
           ],
           maxIterations: MAX_ITERATIONS,
           progress: ctx.progress,
-          ownFiles: files,
         },
         ctx.usage,
       );

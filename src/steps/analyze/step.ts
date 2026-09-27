@@ -87,7 +87,6 @@ export function createAnalyzeStep(config: ModernizerConfig, model: ModelClient):
           ],
           maxIterations: MAX_ITERATIONS,
           progress: ctx.progress,
-          ownFiles: [ctx.file, ...tests],
         },
         ctx.usage,
       );

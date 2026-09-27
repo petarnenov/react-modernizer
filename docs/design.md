@@ -62,7 +62,8 @@ problems — unresolved imports, unfollowable dynamic imports, parse errors, cyc
 
 Per file, after every step:
 
-- `gates.commands` — by default `eslint {files}`, `tsc --noEmit --incremental`, `jest --findRelatedTests {files}`. CRA's
+- `gates.commands` — by default `eslint {files}`, `tsc --noEmit --incremental`, `jest --findRelatedTests {files}` (each judged by new errors or
+  newly failing tests only). CRA's
   Jest compiles TypeScript with Babel, which does **not** type-check, so `tsc` is mandatory.
 - `gates.coverage.min` — line coverage of the file by its tests.
 - `gates.forbid` — patterns that may not appear in **added** lines: `any`, `@ts-ignore`, `eslint-disable`,

@@ -53,7 +53,13 @@ export function formatTokens(tokens: number): string {
 const shortCommand = (command: string) =>
   command.length <= 60 ? command : `${command.slice(0, 57)}...`;
 
-const firstLine = (text: string) => text.split('\n', 1)[0] ?? '';
+/** The first line of a reason, and when it only introduces what follows (`… failed:`), the first line of that too. */
+function reasonLine(text: string): string {
+  const [first = '', ...rest] = text.split('\n');
+  if (!first.trimEnd().endsWith(':')) return first;
+  const next = rest.find((l) => l.trim() !== '');
+  return next === undefined ? first : `${first.trimEnd()} ${next.trim()}`;
+}
 
 /** What a model or gate activity looks like in a status line. */
 function activity(event: ProgressEvent): string | undefined {
@@ -104,7 +110,7 @@ function permanent(event: ProgressEvent, label: (file: string) => string): strin
     case 'gate-end':
       return `  ${label(event.file)} · gate ${shortCommand(event.command)} ${event.ok ? '✓' : '✗'} ${formatDuration(event.ms)}`;
     case 'retry':
-      return `  ${label(event.file)} · ${event.step} attempt ${String(event.attempt + 1)}: ${firstLine(event.reason)}`;
+      return `  ${label(event.file)} · ${event.step} attempt ${String(event.attempt + 1)}: ${reasonLine(event.reason)}`;
     default:
       return undefined;
   }

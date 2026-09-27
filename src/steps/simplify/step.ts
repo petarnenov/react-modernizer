@@ -1,4 +1,3 @@
-import { characterizationTestPath, existingTestPath } from '../characterize-tests/paths.js';
 import { withCache } from '../../config/commands.js';
 import { readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -90,7 +89,6 @@ export function createSimplifyStep(config: ModernizerConfig, model: ModelClient)
           ],
           maxIterations: MAX_ITERATIONS,
           progress: ctx.progress,
-          ownFiles: [ctx.file, characterizationTestPath(ctx.file), existingTestPath(ctx.file)],
         },
         ctx.usage,
       );

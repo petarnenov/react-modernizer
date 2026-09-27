@@ -123,7 +123,7 @@ steps:
 gates:
   commands:
     - { run: 'npx eslint --format json {files}', newErrorsOnly: eslint }
-    - '{testRunner} --findRelatedTests {files}'
+    - { run: '{testRunner} --findRelatedTests {files}', newErrorsOnly: jest }
     # tsc left out: without a tsconfig.json it fails on every file
 git:
   branch: modernizer/pilot-1
@@ -226,11 +226,16 @@ fail steps that did not touch it.
 ## Legacy errors: `newErrorsOnly`
 
 A project with thousands of existing type errors would fail every step on a plain `tsc` gate. Write such gates as
-`{ run, newErrorsOnly: tsc | eslint }`: the gate then fails only on errors that are **new**, and the model sees only
-those. For a whole-project command (no `{files}`) the baseline is taken once per run — the log says
+`{ run, newErrorsOnly: tsc | eslint | jest }`: the gate then fails only on errors that are **new**, and the model sees
+only those. For a whole-project command (no `{files}`) the baseline is taken once per run — the log says
 `baseline: … — 2996 errors already there`; for a `{files}` command, on each file before its first step. Errors are
 matched by file, code or rule, and message, not by line, so moved code keeps its errors; a renamed file keeps its
 old name's errors. ESLint must print `--format json` (built into every version; ESLint 9 dropped `unix`).
+
+Tests work the same way with `newErrorsOnly: jest`, the default for the test gate: a related test that already fails
+before the step (a legacy failure in some importer's test) does not fail it; a test that newly fails does, and the
+model sees that test's name and the start of Jest's message. Failures are read from Jest's default report (`FAIL`
+lines and `●` test titles), matched by test file and full test title.
 
 `{cache}` is a directory per worker outside the worktree, kept between runs: `--tsBuildInfoFile {cache}/tsc.tsbuildinfo`
 keeps `tsc --incremental` fast. Anything the gates write into the worktree is removed after them, so it never becomes

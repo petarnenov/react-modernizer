@@ -80,6 +80,80 @@ const err = (file: string, what: string, line = 1): ReportedError => ({
   text: `${file}(${String(line)},1): error ${what}`,
 });
 
+const ESC = String.fromCharCode(27);
+const JEST = [
+  'PASS src/ok.test.js',
+  '  ● Console',
+  '',
+  '    console.log',
+  '      hello',
+  '',
+  `${ESC}[1m${ESC}[31mFAIL${ESC}[39m${ESC}[22m src/Fields.test.tsx (66.186 s)`,
+  '  ● Fields › sets a negative default',
+  '',
+  '    Unable to find an element with the text: must fall between 0 and 100',
+  '',
+  ...Array.from({ length: 20 }, (_, i) => `      <div id="${String(i)}" />`),
+  '',
+  '  ● Fields › sets a negative min',
+  '',
+  '    expect(received).toBe(expected)',
+  '',
+  'FAIL /w/src/broken.test.js',
+  '  ● Test suite failed to run',
+  '',
+  "    Cannot find module './gone'",
+  '',
+  'Summary of all failing tests',
+  'FAIL src/Fields.test.tsx',
+  '  ● Fields › sets a negative default',
+  '',
+  'Tests:       3 failed, 1 passed, 4 total',
+].join('\n');
+
+describe('parseErrors jest', () => {
+  it('reads failing tests by test file and title, not console blocks or the repeated summary', () => {
+    const errors = parseErrors('jest', JEST, ['/w']);
+
+    expect(errors.map((e) => [e.file, e.what])).toEqual([
+      ['src/Fields.test.tsx', 'Fields › sets a negative default'],
+      ['src/Fields.test.tsx', 'Fields › sets a negative min'],
+      ['src/broken.test.js', 'Test suite failed to run'],
+    ]);
+  });
+
+  it('keeps the start of each message for the model', () => {
+    const [first, second] = parseErrors('jest', JEST, ['/w']);
+
+    expect(first?.text).toContain('Unable to find an element');
+    expect(first?.text.split('\n')).toHaveLength(13);
+    expect(second?.text).toBe(
+      'src/Fields.test.tsx › Fields › sets a negative min\n    expect(received).toBe(expected)',
+    );
+  });
+
+  it('passes tests that already failed and fails a newly failing one', () => {
+    const command = { run: 'jest', newErrorsOnly: 'jest' as const };
+    const baseline = countErrors(parseErrors('jest', JEST, ['/w']));
+    const added = [
+      'FAIL src/Card.test.js',
+      '  ● Card › formats 1000',
+      '',
+      '    expected 1,000',
+    ].join('\n');
+
+    expect(judge(command, { ok: false, output: JEST }, ['/w'], baseline)).toEqual({ ok: true });
+    const result = judge(command, { ok: false, output: `${added}\n${JEST}` }, ['/w'], baseline);
+    expect(result).toEqual({
+      ok: false,
+      gate: 'jest',
+      output:
+        '1 new error(s); errors that were there before are not shown:\n' +
+        'src/Card.test.js › Card › formats 1000\n    expected 1,000',
+    });
+  });
+});
+
 describe('newErrors', () => {
   const baseline = countErrors([err('src/a.ts', 'TS1 old'), err('src/a.ts', 'TS1 old')]);
 
@@ -168,6 +242,11 @@ const FAKE_TSC =
 /** An ESLint stand-in printing JSON with absolute paths: one error per line containing BROKEN in the given files. */
 const FAKE_ESLINT =
   "node -e \"const fs=require('fs');console.log(JSON.stringify(process.argv.slice(1).map(f=>({filePath:process.cwd()+'/'+f,messages:fs.readFileSync(f,'utf8').split('\\\\n').flatMap((l,i)=>l.includes('BROKEN')?[{ruleId:'no-broken',severity:2,message:'broken',line:i+1,column:1}]:[])}))))\" {files}; ! grep -q BROKEN {files}";
+
+/** A Jest stand-in: a legacy test always fails; `src/Card.test.js` fails when a file it covers contains BROKEN. */
+const FAKE_JEST =
+  "printf 'FAIL src/legacy.test.js\\n  ● legacy › fails\\n\\n    expected 1\\n'; " +
+  "if grep -qs BROKEN {files}; then printf 'FAIL src/Card.test.js\\n  ● Card › works\\n\\n    expected 2\\n'; fi; exit 1";
 
 function project(root: string, commands: unknown[]) {
   return parseConfig({
@@ -262,6 +341,51 @@ describe('a run with baseline gates', () => {
     });
 
     expect(summary).toMatchObject({ done: 1, failed: 0 });
+  });
+});
+
+describe('a run with a jest baseline gate', () => {
+  it('passes despite a test that failed before the step, following a rename', async () => {
+    const root = await tempRepo({ 'src/Card.js': 'export const a = 1;\n' });
+    const step: Step = {
+      id: 'simplify',
+      run: async (ctx) => {
+        sh(ctx.cwd, 'mv', 'src/Card.js', 'src/Card.ts');
+        await writeFile(join(ctx.cwd, 'src/Card.ts'), 'export const a = 2;\n');
+      },
+    };
+
+    const summary = await runModernizer({
+      config: project(root, [{ run: FAKE_JEST, newErrorsOnly: 'jest' }]),
+      steps: { simplify: step },
+      log: () => undefined,
+    });
+
+    expect(summary).toMatchObject({ done: 1, failed: 0 });
+  });
+
+  it('fails on a newly failing test and gives the step only that one', async () => {
+    const root = await tempRepo({ 'src/Card.js': 'export const a = 1;\n' });
+    const seen: (string | undefined)[] = [];
+    let n = 0;
+    const step: Step = {
+      id: 'simplify',
+      run: async (ctx) => {
+        seen.push(ctx.previousFailure);
+        n++;
+        await writeFile(join(ctx.cwd, 'src/Card.js'), `export const a = ${String(n)}; // BROKEN\n`);
+      },
+    };
+
+    const summary = await runModernizer({
+      config: project(root, [{ run: FAKE_JEST, newErrorsOnly: 'jest' }]),
+      steps: { simplify: step },
+      log: () => undefined,
+    });
+
+    expect(summary.failed).toBe(1);
+    expect(seen[1]).toContain('src/Card.test.js › Card › works\n    expected 2');
+    expect(seen[1]).not.toContain('src/legacy.test.js ›');
   });
 });
 

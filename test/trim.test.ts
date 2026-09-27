@@ -2,7 +2,7 @@ import { mkdtemp, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { compact } from '../src/model/ollama.js';
+import { compact, recordRead } from '../src/model/ollama.js';
 import { testTool } from '../src/steps/js-to-ts/step.js';
 
 const read = (turn: number, path: string, content: string) => ({
@@ -32,20 +32,31 @@ const HISTORY = [
 ];
 
 describe('compaction keeps what the step needs', () => {
-  const sent = compact(HISTORY, 9, ['src/Card.js', 'src/Card.test.js']);
+  const sent = compact(HISTORY, 9);
 
-  it('sends the latest read of an own file in full, however old', () => {
+  it('sends the latest read of a file in full, however old', () => {
     expect(sent[6]).toEqual({ role: 'tool', tool_name: 'read_file', content: 'CARD v2' });
   });
 
-  it('turns a superseded read of an own file into a note', () => {
+  it('turns a superseded read of a file into a note', () => {
     expect(sent[3]?.content).toBe(
       '[earlier result of read_file src/Card.js omitted — call it again if you need it]',
     );
   });
 
-  it('still notes old reads of other files', () => {
-    expect(sent[4]?.content).toContain('omitted');
+  it("keeps an old read of any file, not only the step's own", () => {
+    expect(sent[4]?.content).toBe('OTHER');
+  });
+
+  it('still notes old results of other tools', () => {
+    const tests = {
+      role: 'tool' as const,
+      tool_name: 'run_tests',
+      content: 'PASSED',
+      turn: 1,
+      note: '[run_tests]',
+    };
+    expect(compact([...HISTORY, tests], 9).at(-1)?.content).toBe('[run_tests]');
   });
 
   it('drops old reasoning, keeps recent reasoning, text and order', () => {
@@ -55,8 +66,38 @@ describe('compaction keeps what the step needs', () => {
     expect(sent.map((m) => m.role)).toEqual(HISTORY.map((m) => m.role));
   });
 
-  it('keeps an own file read only once in full at any age', () => {
-    expect(compact(HISTORY.slice(0, 5), 30, ['src/Card.js'])[3]?.content).toBe('CARD v1');
+  it('keeps a file read only once in full at any age', () => {
+    expect(compact(HISTORY.slice(0, 5), 30)[3]?.content).toBe('CARD v1');
+  });
+});
+
+describe('an unchanged file read again', () => {
+  it('comes back as a note, and the earlier read stays in full', () => {
+    const recorded = recordRead(HISTORY, 'src/other.ts', 'OTHER');
+    expect(recorded).toEqual({
+      content:
+        '[src/other.ts is unchanged since your read on turn 1; that result is still above, in full]',
+    });
+
+    const sent = compact(
+      [...HISTORY, { role: 'tool', tool_name: 'read_file', turn: 9, ...recorded }],
+      20,
+    );
+    expect(sent[4]?.content).toBe('OTHER');
+  });
+
+  it('comes back in full when the file changed, superseding the earlier read', () => {
+    expect(recordRead(HISTORY, 'src/Card.js', 'CARD v3')).toEqual({
+      content: 'CARD v3',
+      path: 'src/Card.js',
+    });
+    expect(recordRead(HISTORY, 'src/Card.js', 'CARD v2')).not.toHaveProperty('path');
+  });
+
+  it('keeps errors as they are', () => {
+    expect(recordRead(HISTORY, 'src/gone.ts', 'Error: no such file')).toEqual({
+      content: 'Error: no such file',
+    });
   });
 });
 

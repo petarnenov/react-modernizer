@@ -68,6 +68,7 @@ describe('parseConfig', () => {
     expect(withTestRunner(config.gates.commands[2]?.run ?? '', config.testRunner)).toBe(
       'CI=true npx react-scripts test --watchAll=false --findRelatedTests {files}',
     );
+    expect(config.gates.commands[2]?.newErrorsOnly).toBe('jest');
     expect(config.gates.coverage.min).toBe(80);
   });
 

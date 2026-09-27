@@ -146,6 +146,29 @@ describe('processFile', () => {
     expect(await readFile(join(j.worktree.cwd, 'src/Card.jsx'), 'utf8')).toBe(APP['src/Card.jsx']);
   });
 
+  it('ends the step when an attempt leaves the rejected tree unchanged', async () => {
+    const calls: StepContext[] = [];
+    const gates: string[] = [];
+    // Writes BROKEN once, then only reads.
+    const j = await job([
+      fakeStep('simplify', (ctx) => (ctx.attempt === 0 ? 'BROKEN\n' : ''), calls),
+    ]);
+    const result = await processFile({
+      ...j,
+      progress: (e) => {
+        if (e.kind === 'gate-start') gates.push(e.command);
+      },
+    });
+
+    expect(calls).toHaveLength(2);
+    expect(gates).toHaveLength(1);
+    expect(result).toMatchObject({ status: 'failed', attempts: 2 });
+    expect(result.status === 'failed' && result.reason).toBe(
+      `simplify: attempt 2 changed nothing since the gates rejected it:\n${calls[1]?.previousFailure ?? ''}`,
+    );
+    expect(calls[1]?.previousFailure).toContain('grep -q BROKEN');
+  });
+
   it('fails on a forbidden pattern the step adds', async () => {
     const result = await processFile(
       await job([fakeStep('simplify', () => 'const x: any = 1;\n')]),

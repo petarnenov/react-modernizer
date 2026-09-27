@@ -1,4 +1,4 @@
-import { readFile } from 'node:fs/promises';
+import { readFile, realpath } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { StepId } from '../config/schema.js';
 import { UsageMeter, type UsageTotals } from '../model/usage.js';
@@ -79,6 +79,8 @@ const perFile = (command: GateCommand) =>
 async function takeFileBaselines(job: FileJob): Promise<Map<string, ErrorCounts>> {
   const baselines = new Map<string, ErrorCounts>();
   const { cwd, cache } = job.worktree;
+  // As the gates do: tools print absolute paths through the real path (`/var` → `/private/var` on macOS).
+  const cwds = [cwd, await realpath(cwd).catch(() => cwd)];
   for (const command of job.gates.commands.filter(perFile)) {
     const label = `baseline: ${command.run}`;
     job.progress?.({ kind: 'gate-start', command: label });
@@ -88,7 +90,7 @@ async function takeFileBaselines(job: FileJob): Promise<Map<string, ErrorCounts>
         full: true,
       }),
     );
-    const counts = countErrors(parseErrors(command.newErrorsOnly ?? 'tsc', result.output, [cwd]));
+    const counts = countErrors(parseErrors(command.newErrorsOnly ?? 'tsc', result.output, cwds));
     baselines.set(command.run, counts);
     job.progress?.({
       kind: 'gate-end',
@@ -274,6 +276,9 @@ export async function processFile(job: FileJob): Promise<FileResult> {
     let previousFailure: string | undefined;
     // Kept apart: a later error (the budget, a crash) must not hide what the gates still rejected.
     let lastGateFailure: string | undefined;
+    // The tree the gates last rejected: an attempt that ends on it again would only be rejected again.
+    let rejectedTree: string | undefined;
+    let unchangedSinceRejected = false;
     let passed = false;
     // Staged here, so unstaged changes after the step are exactly what the step did.
     await job.worktree.stage();
@@ -308,9 +313,15 @@ export async function processFile(job: FileJob): Promise<FileResult> {
         // The gates judge changes. A step that left everything as it was has nothing to judge, and must not fail
         // for problems it did not introduce.
         await job.worktree.stage();
-        if ((await job.worktree.stagedTree()) === before) {
+        const tree = await job.worktree.stagedTree();
+        if (tree === before) {
           passed = true;
           continue;
+        }
+        if (tree === rejectedTree && lastGateFailure !== undefined) {
+          previousFailure = `attempt ${String(attempt + 1)} changed nothing since the gates rejected it:\n${lastGateFailure}`;
+          unchangedSinceRejected = true;
+          break;
         }
         const result = await check(job, pipeline, producing);
         if (result.ok) {
@@ -319,6 +330,7 @@ export async function processFile(job: FileJob): Promise<FileResult> {
         } else {
           previousFailure = describe(result);
           lastGateFailure = previousFailure;
+          rejectedTree = tree;
         }
       } catch (error) {
         const outside = await outsideAllowed(job, step, file);
@@ -334,7 +346,9 @@ export async function processFile(job: FileJob): Promise<FileResult> {
         attempts,
         reason:
           `${step.id}: ${previousFailure ?? 'failed'}` +
-          (lastGateFailure !== undefined && lastGateFailure !== previousFailure
+          (lastGateFailure !== undefined &&
+          lastGateFailure !== previousFailure &&
+          !unchangedSinceRejected
             ? `\n\nlast gate failure:\n${lastGateFailure}`
             : ''),
         ...findings(),

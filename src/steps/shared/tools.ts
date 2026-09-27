@@ -1,5 +1,5 @@
 import { readdir, readFile, realpath, stat, writeFile } from 'node:fs/promises';
-import { basename, isAbsolute, join, relative, resolve, sep } from 'node:path';
+import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { z } from 'zod';
 import { defineTool, type ModelTool } from '../../model/client.js';
 import { runCommand } from '../../run/gates.js';
@@ -7,6 +7,20 @@ import { SEVERITIES, type BugReport } from '../step.js';
 
 const READ_LIMIT = 200_000;
 const HIDDEN = new Set(['node_modules', '.git']);
+
+/**
+ * The real path of `path`, or for a path that does not exist yet (a file about to be written), the real path of its
+ * nearest existing directory with the rest appended — so a root reached through a link (`/var` → `/private/var`)
+ * compares equal.
+ */
+async function realExisting(path: string): Promise<string> {
+  try {
+    return await realpath(path);
+  } catch {
+    const parent = dirname(path);
+    return parent === path ? path : join(await realExisting(parent), basename(path));
+  }
+}
 
 /**
  * Resolves a model-supplied path inside the target, or throws the reason it is refused. Symlinks are followed, so a
@@ -30,7 +44,7 @@ export async function confine(cwd: string, path: string): Promise<string> {
   if (basename(absolute).startsWith('.env')) {
     throw new Error(`environment files are not readable: ${path}`);
   }
-  const real = await realpath(absolute).catch(() => absolute);
+  const real = await realExisting(absolute);
   const realRoot = await realpath(cwd);
   const realInside = relative(realRoot, real);
   if (realInside.startsWith('..') || isAbsolute(realInside)) {

@@ -49,7 +49,7 @@ gates:
         run: 'npx tsc --noEmit --incremental --tsBuildInfoFile {cache}/tsc.tsbuildinfo',
         newErrorsOnly: tsc,
       }
-    - '{testRunner} --findRelatedTests {files}'
+    - { run: '{testRunner} --findRelatedTests {files}', newErrorsOnly: jest }
   coverage: { min: 80 }
   forbid:
     [
