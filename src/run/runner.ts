@@ -10,6 +10,7 @@ import { ConfigError } from '../config/load.js';
 import { STEP_IDS, type ModernizerConfig, type StepId } from '../config/schema.js';
 import { buildGraph } from '../graph/build.js';
 import { runPool, Scheduler, type Outcome } from '../orchestrator/scheduler.js';
+import { measure } from '../steps/simplify/metrics.js';
 import type { Step, StepRegistry } from '../steps/step.js';
 import { expandCommand, runCommand, Semaphore } from './gates.js';
 import { openRepository } from './git.js';
@@ -257,6 +258,14 @@ export async function runModernizer(options: RunOptions): Promise<RunSummary> {
     const cost = (usage: { inputTokens: number; outputTokens: number }) =>
       `(${formatDuration(Date.now() - fileStarted)} · ${formatTokens(usage.inputTokens + usage.outputTokens)} tokens)`;
     try {
+      // Nothing to modernize: settled before any step, gate or model call, and not counted toward --files.
+      const text = await readFile(join(config.target, file), 'utf8');
+      if (measure(file, text).lines === 0) {
+        begun--;
+        await store.record(file, { status: 'done', attempts: 0 });
+        log(`· ${file} no code, skipped`);
+        return 'done';
+      }
       const base = await branch.tip();
       let result = await processFile({
         file,

@@ -446,6 +446,49 @@ describe('runModernizer', () => {
     });
   });
 
+  describe('files without code', () => {
+    it('skips an empty and a comment-only file without a step call', async () => {
+      const root = await tempRepo({
+        'src/empty.js': '\n',
+        'src/license.js': '/* Copyright ACME */\n// nothing else\n',
+        'src/api.js': 'export const api = 1;\n',
+      });
+      const calls: StepContext[] = [];
+      const lines: string[] = [];
+
+      const summary = await runModernizer({
+        config: configFor(root),
+        steps: { simplify: fakeStep('simplify', undefined, calls) },
+        log: (l) => lines.push(l),
+      });
+
+      expect(calls.map((c) => c.file)).toEqual(['src/api.js']);
+      expect(summary).toMatchObject({ done: 3, failed: 0 });
+      expect(lines).toContain('· src/empty.js no code, skipped');
+      expect(lines).toContain('· src/license.js no code, skipped');
+      expect(sh(root, 'log', '--format=%s', 'main..main-modernized')).toBe('modernize: src/api.js');
+    });
+
+    it('does not count a skipped file toward --files', async () => {
+      const root = await tempRepo({
+        'src/a.js': '\n',
+        'src/b.js': 'export const b = 1;\n',
+        'src/c.js': 'export const c = 1;\n',
+      });
+      const calls: StepContext[] = [];
+
+      const summary = await runModernizer({
+        config: configFor(root),
+        steps: { simplify: fakeStep('simplify', undefined, calls) },
+        files: { kind: 'count', n: 1 },
+        log: () => undefined,
+      });
+
+      expect(calls.map((c) => c.file)).toEqual(['src/b.js']);
+      expect(summary).toMatchObject({ done: 2, remaining: 1, limited: true });
+    });
+  });
+
   it('with two workers still produces one commit per file', async () => {
     const files = Object.fromEntries(
       Array.from({ length: 6 }, (_, i) => [
