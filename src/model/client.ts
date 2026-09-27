@@ -31,6 +31,8 @@ export interface ToolRunRequest {
   maxIterations: number;
   /** Told about each request, tool call and rate-limit wait. */
   progress?: ModelProgressSink | undefined;
+  /** The step's own files (the file and its test): their latest content is always kept in the model's context. */
+  ownFiles?: readonly string[] | undefined;
 }
 
 export interface ToolRunResult {

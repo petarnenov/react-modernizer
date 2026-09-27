@@ -37,28 +37,57 @@ interface ChatMessage {
   tool_name?: string;
 }
 
-/** A tool result as kept locally: the turn that produced it, and what to send once it is old. */
-interface ToolMessage extends ChatMessage {
-  turn: number;
-  note: string;
+/** A message as kept locally, with what compaction needs to know about it. */
+interface Recorded extends ChatMessage {
+  /** The turn that produced it (assistant messages and tool results). */
+  turn?: number;
+  /** What a tool result becomes once it is no longer sent in full. */
+  note?: string;
+  /** The path a `read_file` result is the content of. */
+  path?: string;
 }
 
-/** How many of the latest turns keep their tool results in full. */
+/** How many of the latest turns keep their tool results and reasoning in full. */
 const FULL_RESULT_TURNS = 2;
 
 /**
- * What is sent on request `turn`: tool results from the last two turns in full, older ones as a one-line note.
- * Everything else — prompts, the model's own messages — is sent as it was, so the conversation stays well-formed.
- * Without this, every earlier file read and test run is sent again on every turn.
+ * What is sent on request `turn`. Tool results from the last two turns go in full, older ones as a one-line note,
+ * except the latest read of each of the step's own files, which always goes in full; an earlier read of the same
+ * own file is superseded and becomes a note. Assistant messages older than two turns lose their `thinking`; their
+ * text and tool calls stay, so every tool result still answers its call. Without this, every earlier file read,
+ * test run and chain of reasoning is sent again on every turn.
  */
 export function compact(
-  messages: readonly (ChatMessage | ToolMessage)[],
+  messages: readonly Recorded[],
   turn: number,
+  ownFiles: readonly string[] = [],
 ): ChatMessage[] {
-  return messages.map((m) => {
-    if (!('turn' in m)) return m;
-    const { turn: produced, note, ...message } = m;
-    return produced < turn - FULL_RESULT_TURNS ? { ...message, content: note } : message;
+  const own = new Set(ownFiles);
+  const latestRead = new Map<string, number>();
+  messages.forEach((m, i) => {
+    if (
+      m.role === 'tool' &&
+      m.tool_name === 'read_file' &&
+      m.path !== undefined &&
+      own.has(m.path)
+    ) {
+      latestRead.set(m.path, i);
+    }
+  });
+  return messages.map((m, i) => {
+    const { turn: produced, note, path, ...message } = m;
+    if (produced === undefined) return message;
+    const old = produced < turn - FULL_RESULT_TURNS;
+    if (message.role === 'assistant') {
+      if (!old) return message;
+      const rest: ChatMessage = { ...message };
+      delete rest.thinking;
+      return rest;
+    }
+    if (path !== undefined && latestRead.has(path)) {
+      return latestRead.get(path) === i ? message : { ...message, content: note ?? '' };
+    }
+    return old ? { ...message, content: note ?? '' } : message;
   });
 }
 
@@ -226,7 +255,7 @@ export class OllamaModelClient implements ModelClient {
         parameters: parametersOf(tool),
       },
     }));
-    const messages: (ChatMessage | ToolMessage)[] = [
+    const messages: Recorded[] = [
       { role: 'system', content: request.system },
       { role: 'user', content: request.prompt },
     ];
@@ -238,7 +267,7 @@ export class OllamaModelClient implements ModelClient {
       request.progress?.({ kind: 'model-turn', turn: turn + 1 });
       last = (await this.request('/api/chat', {
         model: request.model,
-        messages: compact(messages, turn),
+        messages: compact(messages, turn, request.ownFiles),
         tools,
         stream: false,
         think: thinkLevel(request.effort),
@@ -249,18 +278,25 @@ export class OllamaModelClient implements ModelClient {
       }
       const calls = last.message.tool_calls ?? [];
       // Sent back as returned, thinking included: gpt-oss continues its reasoning from it.
-      messages.push(last.message);
+      messages.push({ ...last.message, turn });
       if (calls.length === 0) {
         break;
       }
       for (const call of calls) {
-        const detail = toolDetail(call.function.name, argumentsOf(call));
+        const input = argumentsOf(call);
+        const detail = toolDetail(call.function.name, input);
+        const readPath =
+          call.function.name === 'read_file' &&
+          typeof (input as { path?: unknown } | undefined)?.path === 'string'
+            ? (input as { path: string }).path
+            : undefined;
         messages.push({
           role: 'tool',
           tool_name: call.function.name,
           content: await runCall(byName.get(call.function.name), call, request.progress),
           turn,
           note: `[earlier result of ${call.function.name}${detail === undefined ? '' : ` ${detail}`} omitted — call it again if you need it]`,
+          ...(readPath === undefined ? {} : { path: readPath }),
         });
       }
     }

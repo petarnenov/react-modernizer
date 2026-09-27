@@ -1,3 +1,4 @@
+import { characterizationTestPath, existingTestPath } from '../characterize-tests/paths.js';
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { withTestRunner } from '../../config/commands.js';
@@ -86,6 +87,7 @@ export function createClassToFunctionStep(config: ModernizerConfig, model: Model
           ],
           maxIterations: MAX_ITERATIONS,
           progress: ctx.progress,
+          ownFiles: [ctx.file, characterizationTestPath(ctx.file), existingTestPath(ctx.file)],
         },
         ctx.usage,
       );

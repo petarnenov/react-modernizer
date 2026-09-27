@@ -33,14 +33,14 @@ steps:
   redux-connect-to-hooks: { enabled: false } # a separate decision
   js-to-ts: # needs a tsconfig.json in the target (Phase 0)
     enabled: true
-    typecheckCommand: npx tsc --noEmit --incremental
-    testCommand: '{testRunner} --findRelatedTests {file}'
+    typecheckCommand: 'npx tsc --noEmit --incremental --tsBuildInfoFile {cache}/tsc.tsbuildinfo'
+    testCommand: '{testRunner} {testFile}' # its own test: types cannot change what other tests see
     helpers: [] # e.g. [src/store/hooks.ts] — typed useAppSelector / useAppDispatch
   simplify:
     enabled: true
     minLines: 40 # smaller files are skipped without a model call
     testCommand: '{testRunner} --findRelatedTests {file}'
-    typecheckCommand: npx tsc --noEmit --incremental
+    typecheckCommand: 'npx tsc --noEmit --incremental --tsBuildInfoFile {cache}/tsc.tsbuildinfo'
 
 gates:
   commands: # a string passes on exit 0; newErrorsOnly fails only on errors not there before

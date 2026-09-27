@@ -51,7 +51,7 @@ describe('configuration', () => {
 
     expect(config.steps['js-to-ts']).toMatchObject({
       typecheckCommand: 'npx tsc --noEmit --incremental --tsBuildInfoFile {cache}/tsc.tsbuildinfo',
-      testCommand: '{testRunner} --findRelatedTests {file}',
+      testCommand: '{testRunner} {testFile}',
       helpers: [],
     });
     expect(config.gates.forbid).toContain('@ts-expect-error');

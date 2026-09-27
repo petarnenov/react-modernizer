@@ -55,6 +55,7 @@ export function createCharacterizeTestsStep(config: ModernizerConfig, model: Mod
           }),
           maxIterations: MAX_ITERATIONS,
           progress: ctx.progress,
+          ownFiles: [ctx.file, testPath],
         },
         ctx.usage,
       );

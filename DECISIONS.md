@@ -204,3 +204,17 @@
 - **Ollama compaction:** tool results older than the last two turns are sent as a one-line note; the model's own
   messages (with `thinking`) are sent unchanged. Anthropic is untouched: caching already makes resent context cheap.
 - **Reasons keep the last gate failure** when a later error (the budget) ends the attempts.
+
+## 18. Trimmed model context (trim-model-context, 2026-09-27)
+
+- **Found in the full pilot with glm-5.3:** 31 requests × ~15k input exhausted 500k in the first `js-to-ts` attempt;
+  the model re-read its own file three times in `analyze` because compaction had noted it away, and every old
+  `thinking` was resent.
+- **Own files always present:** steps pass `ownFiles`; the latest read of each is sent in full at any age, earlier
+  reads of the same path become notes.
+- **Old reasoning dropped** after two turns; text and tool calls stay, so results still answer their calls.
+- **`js-to-ts` runs only its own test** (`{testRunner} {testFile}`): the erased JavaScript is proven identical and the
+  step can change nothing else, so `--findRelatedTests` (1 min 24 s per call on a shared module) bought nothing. The
+  gate still runs related tests once. No test → `run_tests` says so instead of running.
+- The example config's type checks now use `{cache}`: copied as they were, they would have written build info into
+  the worktree again.

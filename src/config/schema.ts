@@ -94,8 +94,11 @@ const stepsSchema = z
       .extend({
         /** Type-checks the project; the step's model sees the errors in its two files. */
         typecheckCommand: z.string().min(1).default(TYPECHECK),
-        /** What the step's model runs: the tests related to the file. */
-        testCommand: z.string().min(1).default('{testRunner} --findRelatedTests {file}'),
+        /**
+         * What the step's model runs: the file's own characterization test (`{testFile}`). Types cannot change what
+         * other tests see; the gates still run the related tests once.
+         */
+        testCommand: z.string().min(1).default('{testRunner} {testFile}'),
         /** Files with shared types to use rather than re-declare, e.g. typed Redux hooks. */
         helpers: z.array(z.string().min(1)).default([]),
       })

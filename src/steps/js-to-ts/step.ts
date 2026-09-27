@@ -1,11 +1,11 @@
-import { withCache } from '../../config/commands.js';
 import { access, readFile, rename } from 'node:fs/promises';
 import { join, posix } from 'node:path';
 import ts from 'typescript';
-import { withTestRunner } from '../../config/commands.js';
+import { z } from 'zod';
+import { withCache, withTestRunner } from '../../config/commands.js';
 import type { ModernizerConfig } from '../../config/schema.js';
 import { parseSource } from '../../graph/extract.js';
-import type { ModelClient } from '../../model/client.js';
+import { defineTool, type ModelClient, type ModelTool } from '../../model/client.js';
 import { shellQuote } from '../../run/gates.js';
 import { characterizationTestPath } from '../characterize-tests/paths.js';
 import { exportedValueNames, exportsChanged } from '../class-to-function/analysis.js';
@@ -35,6 +35,37 @@ export function containsJsx(fileName: string, text: string): boolean {
   };
   visit(parseSource(fileName, text));
   return found;
+}
+
+/**
+ * `run_tests` for the typed file. By default it runs only the file's own characterization test: the step proves the
+ * erased JavaScript is unchanged and can change nothing else, so no other test can behave differently. Without such
+ * a test, a command that needs `{testFile}` runs nothing and says so.
+ */
+export function testTool(
+  cwd: string,
+  command: string,
+  file: string,
+  testFile: string | undefined,
+  timeoutSeconds: number,
+): ModelTool<never> {
+  if (testFile === undefined && command.includes('{testFile}')) {
+    return defineTool({
+      name: 'run_tests',
+      description: `Run the tests of ${file}.`,
+      inputSchema: z.object({}),
+      run: () => Promise.resolve(`no characterization test for ${file}; nothing to run`),
+    });
+  }
+  const concrete = command
+    .replaceAll('{file}', shellQuote(file))
+    .replaceAll('{testFile}', testFile === undefined ? '' : shellQuote(testFile));
+  return runTestsTool(
+    cwd,
+    concrete,
+    timeoutSeconds,
+    `Run the tests of ${file}. Finish only when they pass.`,
+  );
 }
 
 /** `src/Card.jsx` → `src/Card.tsx` with JSX, `src/format.js` → `src/format.ts` without. */
@@ -179,14 +210,12 @@ export function createJsToTsStep(config: ModernizerConfig, model: ModelClient): 
               files,
               config.gates.timeoutSeconds,
             ),
-            runTestsTool(
+            testTool(
               ctx.cwd,
-              withTestRunner(options.testCommand, config.testRunner).replaceAll(
-                '{file}',
-                shellQuote(baseline.to),
-              ),
+              withTestRunner(options.testCommand, config.testRunner),
+              baseline.to,
+              baseline.test?.to,
               config.gates.timeoutSeconds,
-              `Run the tests related to ${baseline.to}. Finish only when they pass.`,
             ),
             reportBugTool((bug) => {
               ctx.report(bug);
@@ -194,6 +223,7 @@ export function createJsToTsStep(config: ModernizerConfig, model: ModelClient): 
           ],
           maxIterations: MAX_ITERATIONS,
           progress: ctx.progress,
+          ownFiles: files,
         },
         ctx.usage,
       );

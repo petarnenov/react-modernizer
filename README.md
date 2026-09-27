@@ -280,6 +280,8 @@ will not start.
 - **Nothing breaks:** runtime exports stay the same (new exported types are fine); a file that another file imports
   with an explicit `.js`/`.jsx` extension fails before any model call, naming the importer.
 - Give it your shared types: `steps.js-to-ts.helpers: [src/store/hooks.ts, src/api/types.ts]`.
+- **Tests its own test only:** the model's `run_tests` runs the file's characterization test (`{testRunner} {testFile}`),
+  not `--findRelatedTests` — types cannot change what other tests see, and the gates still run the related tests once.
 
 ## Simplifying (`simplify`)
 
