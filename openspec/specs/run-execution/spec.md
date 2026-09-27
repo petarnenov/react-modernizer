@@ -48,7 +48,10 @@ as failed like any other. When the
 attempts are exhausted, the file's changes SHALL be discarded and, with `retry.onFail: revert-and-report`, the file
 SHALL be recorded as failed with the reason while the run continues; with `retry.onFail: stop`, the run SHALL stop
 after recording it. An error inside a step SHALL be handled like a failed gate. When the last attempt ends in an
-error after an earlier attempt failed the gates, the reason SHALL include that gate failure too.
+error after an earlier attempt failed the gates, the reason SHALL include that gate failure too. When an attempt
+leaves the file's working copy exactly as it was when the gates last rejected it, the gates SHALL NOT run again and
+no further attempt SHALL start: the file SHALL fail with that gate failure and a note that the attempt changed
+nothing.
 
 #### Scenario: Accepted file
 
@@ -79,6 +82,11 @@ error after an earlier attempt failed the gates, the reason SHALL include that g
 
 - **WHEN** the tsc gate fails a step's first attempt and the second attempt runs out of token budget
 - **THEN** the file's reason names the budget and also carries the tsc gate's new errors
+
+#### Scenario: Attempt changes nothing after a gate failure
+
+- **WHEN** the test gate fails a step's second attempt and the third attempt only reads files and writes nothing
+- **THEN** the gates do not run again, no fourth attempt starts, and the file fails with the second attempt's gate failure and a note that the third attempt changed nothing
 
 ### Requirement: Steps must exist
 
@@ -117,7 +125,8 @@ commits.
 
 The run SHALL report its progress as it happens: each setup phase, the file being processed with its position in
 the run, each step and attempt, each model turn and the name of every tool the model calls with the path it
-concerns, waits for the rate limit, each gate command with its duration and result, and each retry with its reason.
+concerns, waits for the rate limit, each gate command with its duration and result, and each retry with the first line of its reason — and, when that
+line only introduces what follows (it ends with `:`), the first non-empty line after it too.
 Progress output SHALL NOT include file contents, prompts or model text. In an interactive terminal it SHALL show a
 live status line per active worker with the elapsed time; otherwise every event SHALL be printed as a line. The run
 SHALL print one line per settled file with its outcome, duration and tokens used, and at the end a summary with the
@@ -148,6 +157,11 @@ non-zero when it stopped on a failure, and when the configuration, target or rep
 
 - **WHEN** the output is piped to a file
 - **THEN** every progress event is written as a plain line with a timestamp and no terminal control codes
+
+#### Scenario: Gate failure as retry reason
+
+- **WHEN** the reason is `npx jest --findRelatedTests {files} failed:` followed by `1 new error(s); …` on the next line
+- **THEN** the retry line shows both, as `… failed: 1 new error(s); …`
 
 ### Requirement: Status command
 
