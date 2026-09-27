@@ -1,13 +1,19 @@
 import { withCache } from '../../config/commands.js';
-import { readFile, writeFile } from 'node:fs/promises';
+import { access, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { withTestRunner } from '../../config/commands.js';
 import type { ModernizerConfig } from '../../config/schema.js';
 import type { ModelClient } from '../../model/client.js';
 import { shellQuote } from '../../run/gates.js';
+import { ownTestCandidates } from '../characterize-tests/paths.js';
 import { exportedNames, exportsChanged } from '../class-to-function/analysis.js';
 import { normalize } from '../shared/normalize.js';
-import { readTools, reportBugTool, runTestsTool, writeOneFileTool } from '../shared/tools.js';
+import {
+  readOwnFilesTool,
+  reportBugTool,
+  runTestsTool,
+  writeOneFileTool,
+} from '../shared/tools.js';
 import { checkTypesTool, typeErrors } from '../shared/typecheck.js';
 import type { Step } from '../step.js';
 import { buildPrompt, SYSTEM_PROMPT } from './instructions.js';
@@ -50,6 +56,16 @@ export function createSimplifyStep(config: ModernizerConfig, model: ModelClient)
         return; // too small to be worth a model call
       }
 
+      const candidates = ownTestCandidates(ctx.file);
+      const tests: string[] = [];
+      for (const candidate of candidates) {
+        const found = await access(join(ctx.cwd, candidate)).then(
+          () => true,
+          () => false,
+        );
+        if (found) tests.push(candidate);
+      }
+
       await model.runTools(
         {
           model: modelName,
@@ -58,10 +74,11 @@ export function createSimplifyStep(config: ModernizerConfig, model: ModelClient)
           prompt: buildPrompt({
             file: ctx.file,
             measures: baseline.measures,
+            tests,
             ...(ctx.previousFailure === undefined ? {} : { previousFailure: ctx.previousFailure }),
           }),
           tools: [
-            ...readTools(ctx.cwd),
+            readOwnFilesTool(ctx.cwd, [ctx.file, ...candidates]),
             writeOneFileTool(
               ctx.cwd,
               ctx.file,

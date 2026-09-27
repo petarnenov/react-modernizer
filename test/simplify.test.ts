@@ -190,6 +190,44 @@ describe('simplify in a run', () => {
     expect(sh(root, 'show', 'modernizer/run:src/total.ts')).toBe(SHORT.trim());
   });
 
+  it('reads only the file and its tests, and names the tests', async () => {
+    const TEST = "test('t', () => {});\n";
+    const { config } = await setup({
+      'src/total.ts': LONG,
+      'src/total.characterization.test.ts': TEST,
+      'src/other.ts': SHORT,
+    });
+    const model = new ScriptedModel(async (tools, request) => {
+      expect(Object.keys(tools).sort()).toEqual([
+        'check_types',
+        'read_file',
+        'report_bug',
+        'run_tests',
+        'write_file',
+      ]);
+      expect(request.prompt).toContain('Its tests: src/total.characterization.test.ts');
+      const read = tools.read_file;
+      if (read === undefined) throw new Error('no read_file');
+      expect(await read.run({ path: 'src/total.characterization.test.ts' } as never)).toBe(TEST);
+      await expect(read.run({ path: 'src/other.ts' } as never)).rejects.toThrow(
+        'only these files can be read',
+      );
+      await write(tools, SHORT);
+    });
+
+    expect((await run(config, createSimplifyStep(config, model))).done).toBe(2);
+  });
+
+  it('says when the file has no tests', async () => {
+    const { config } = await setup({ 'src/total.ts': LONG });
+    const model = new ScriptedModel(async (tools, request) => {
+      expect(request.prompt).toContain('It has no tests.');
+      await write(tools, SHORT);
+    });
+
+    expect((await run(config, createSimplifyStep(config, model))).done).toBe(1);
+  });
+
   it('puts back an edited test and fails', async () => {
     const { root, config } = await setup({
       'src/total.ts': LONG,

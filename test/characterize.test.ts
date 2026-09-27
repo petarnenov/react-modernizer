@@ -14,7 +14,10 @@ import {
 import type { UsageMeter } from '../src/model/usage.js';
 import { runModernizer } from '../src/run/runner.js';
 import { buildPrompt, SYSTEM_PROMPT } from '../src/steps/characterize-tests/instructions.js';
-import { characterizationTestPath } from '../src/steps/characterize-tests/paths.js';
+import {
+  characterizationTestPath,
+  ownTestCandidates,
+} from '../src/steps/characterize-tests/paths.js';
 import { confine, createTools } from '../src/steps/characterize-tests/tools.js';
 import { createBuiltInSteps } from '../src/steps/registry.js';
 import { sh, tempRepo } from './helpers/repo.js';
@@ -52,6 +55,20 @@ describe('characterizationTestPath', () => {
       'src/components/Card.characterization.test.jsx',
     );
     expect(characterizationTestPath('src/api.js')).toBe('src/api.characterization.test.js');
+  });
+});
+
+describe('ownTestCandidates', () => {
+  it('lists the characterization test and a colocated test in every code extension', () => {
+    expect(ownTestCandidates('src/Card.tsx')).toEqual([
+      'src/Card.characterization.test.tsx',
+      'src/Card.test.js',
+      'src/Card.test.jsx',
+      'src/Card.test.ts',
+      'src/Card.test.tsx',
+    ]);
+    expect(ownTestCandidates('src/format.js')[0]).toBe('src/format.characterization.test.js');
+    expect(ownTestCandidates('src/format.js')).toContain('src/format.test.ts');
   });
 });
 

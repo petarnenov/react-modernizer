@@ -53,6 +53,13 @@ export async function confine(cwd: string, path: string): Promise<string> {
   return absolute;
 }
 
+async function readLimited(absolute: string): Promise<string> {
+  const text = await readFile(absolute, 'utf8');
+  return text.length <= READ_LIMIT
+    ? text
+    : `${text.slice(0, READ_LIMIT)}\n… [truncated at ${String(READ_LIMIT)} characters]`;
+}
+
 /** `read_file` and `list_directory`, confined to the target. */
 export function readTools(cwd: string): ModelTool<never>[] {
   return [
@@ -64,13 +71,7 @@ export function readTools(cwd: string): ModelTool<never>[] {
       inputSchema: z.object({
         path: z.string().min(1).describe('Path relative to the project root'),
       }),
-      run: async ({ path }) => {
-        const absolute = await confine(cwd, path);
-        const text = await readFile(absolute, 'utf8');
-        return text.length <= READ_LIMIT
-          ? text
-          : `${text.slice(0, READ_LIMIT)}\n… [truncated at ${String(READ_LIMIT)} characters]`;
-      },
+      run: async ({ path }) => readLimited(await confine(cwd, path)),
     }),
     defineTool({
       name: 'list_directory',
@@ -95,6 +96,25 @@ export function readTools(cwd: string): ModelTool<never>[] {
       },
     }),
   ];
+}
+
+/** `read_file` for a fixed list of paths (relative to the target): a step that judges only its own file reads nothing else. */
+export function readOwnFilesTool(cwd: string, paths: readonly string[]): ModelTool<never> {
+  const allowed = new Set(paths);
+  return defineTool({
+    name: 'read_file',
+    description: `Read one of these files, by path relative to the project root: ${paths.join(', ')}. No other file can be read.`,
+    inputSchema: z.object({
+      path: z.string().min(1).describe('Path relative to the project root'),
+    }),
+    run: async ({ path }) => {
+      const absolute = await confine(cwd, path);
+      if (!allowed.has(relative(cwd, absolute).split(sep).join('/'))) {
+        throw new Error(`only these files can be read: ${paths.join(', ')}`);
+      }
+      return readLimited(absolute);
+    },
+  });
 }
 
 /** A write tool bound to one file: it takes content only, so there is no path to point anywhere else. */

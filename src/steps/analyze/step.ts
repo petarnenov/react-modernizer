@@ -3,8 +3,8 @@ import { join } from 'node:path';
 import type { ModernizerConfig } from '../../config/schema.js';
 import type { ModelClient } from '../../model/client.js';
 import { runCommand, shellQuote } from '../../run/gates.js';
-import { characterizationTestPath, existingTestPath } from '../characterize-tests/paths.js';
-import { readTools, reportBugTool } from '../shared/tools.js';
+import { ownTestCandidates } from '../characterize-tests/paths.js';
+import { readOwnFilesTool, reportBugTool } from '../shared/tools.js';
 import { measure } from '../simplify/metrics.js';
 import type { Step } from '../step.js';
 import { buildPrompt, SYSTEM_PROMPT } from './instructions.js';
@@ -59,8 +59,9 @@ export function createAnalyzeStep(config: ModernizerConfig, model: ModelClient):
       if (measure(ctx.file, text).lines < options.minLines) {
         return; // too small to be worth a model call
       }
+      const candidates = ownTestCandidates(ctx.file);
       const tests: string[] = [];
-      for (const candidate of [existingTestPath(ctx.file), characterizationTestPath(ctx.file)]) {
+      for (const candidate of candidates) {
         if (await exists(join(ctx.cwd, candidate))) tests.push(candidate);
       }
       await model.runTools(
@@ -71,7 +72,6 @@ export function createAnalyzeStep(config: ModernizerConfig, model: ModelClient):
           prompt: buildPrompt({
             file: ctx.file,
             tests,
-            importers: ctx.importers,
             lint: await lintEvidence(
               options.lintCommand,
               ctx.cwd,
@@ -80,7 +80,7 @@ export function createAnalyzeStep(config: ModernizerConfig, model: ModelClient):
             ),
           }),
           tools: [
-            ...readTools(ctx.cwd),
+            readOwnFilesTool(ctx.cwd, [ctx.file, ...candidates]),
             reportBugTool((bug) => {
               ctx.report(bug);
             }, `Record one finding in ${ctx.file}: its line, severity and reason.`),

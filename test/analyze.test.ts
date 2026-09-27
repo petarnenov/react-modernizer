@@ -186,11 +186,43 @@ describe('analyze in a run', () => {
     const model = new ScriptedModel();
 
     expect((await run(config(root), model)).done).toBe(1);
-    expect(model.requests[0]?.tools.map((t) => t.name).sort()).toEqual([
-      'list_directory',
-      'read_file',
-      'report_bug',
-    ]);
+    expect(model.requests[0]?.tools.map((t) => t.name).sort()).toEqual(['read_file', 'report_bug']);
+  });
+
+  it('reads the file and its tests, and is refused any other file', async () => {
+    const PAGE = "import { Timer } from './Timer';\nexport const Page = () => <Timer />;\n";
+    const root = await tempRepo({
+      'src/Timer.jsx': TIMER,
+      'src/Timer.test.js': 'test("ticks", () => {});\n',
+      'src/Page.tsx': PAGE,
+    });
+    const reads: string[] = [];
+    const model = new ScriptedModel(async (tools) => {
+      const read = tools.read_file;
+      if (read === undefined) throw new Error('no read_file');
+      reads.push(await read.run({ path: 'src/Timer.jsx' } as never));
+      reads.push(await read.run({ path: 'src/Timer.test.js' } as never));
+      await expect(read.run({ path: 'src/Page.tsx' } as never)).rejects.toThrow(
+        'only these files can be read',
+      );
+    });
+
+    expect((await run(config(root), model)).done).toBe(1);
+    expect(reads).toEqual([TIMER, 'test("ticks", () => {});\n']);
+    expect(model.requests[0]?.prompt).toContain('src/Timer.test.js');
+  });
+
+  it('does not name the importers in the prompt', async () => {
+    const root = await tempRepo({
+      'src/Timer.jsx': TIMER,
+      'src/Page.tsx': "import { Timer } from './Timer';\nexport const Page = () => <Timer />;\n",
+    });
+    const model = new ScriptedModel();
+
+    await run(config(root), model);
+
+    expect(model.requests[0]?.prompt).toContain('src/Timer.jsx');
+    expect(model.requests[0]?.prompt).not.toContain('Page');
   });
 
   it('gives the model the linter output', async () => {

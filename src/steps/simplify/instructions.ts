@@ -28,6 +28,8 @@ How to work:
 export interface PromptInput {
   file: string;
   measures: Measures;
+  /** The file's tests that exist. */
+  tests: readonly string[];
   previousFailure?: string;
 }
 
@@ -36,6 +38,7 @@ export function buildPrompt(input: PromptInput): string {
   const lines = [
     `File to simplify: ${input.file}`,
     `Now: ${String(input.measures.lines)} code lines, complexity ${String(input.measures.complexity)}.`,
+    input.tests.length > 0 ? `Its tests: ${input.tests.join(', ')}` : 'It has no tests.',
   ];
   if (input.previousFailure !== undefined) {
     lines.push(

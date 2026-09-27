@@ -9,13 +9,25 @@ changing a line.
 
 ### Requirement: Analysis changes nothing
 
-The step's model SHALL be able to read files inside the target, list directories, and report findings; it SHALL have
-no tool that writes or runs anything. Any change to any file during the step SHALL fail the attempt and be put back.
+The step's model SHALL be able to read the file being analysed and its tests — its characterization test and its
+colocated `<name>.test.*` file — and report findings. Reading any other path SHALL be refused with a tool error that
+names the readable paths. The model SHALL have no tool that lists directories, writes or runs anything. Any change to
+any file during the step SHALL fail the attempt and be put back.
 
 #### Scenario: Read-only
 
 - **WHEN** the step runs on `src/Cart.jsx`
-- **THEN** the model's tools are reading, listing and reporting only, and the file is unchanged afterwards
+- **THEN** the model's tools are reading and reporting only, and the file is unchanged afterwards
+
+#### Scenario: Own file and tests
+
+- **WHEN** the model reads `src/Cart.jsx`, `src/Cart.characterization.test.jsx` or `src/Cart.test.js`
+- **THEN** it receives the content of that file
+
+#### Scenario: Importer refused
+
+- **WHEN** the model reads `src/Checkout.tsx`, which imports `src/Cart.jsx`
+- **THEN** it receives a tool error naming the paths it may read, and the step continues
 
 ### Requirement: Grounded findings
 
@@ -72,3 +84,13 @@ A file with fewer code lines than `steps.analyze.minLines` SHALL pass without an
 
 - **WHEN** `minLines` is 30 and a file has 12 code lines
 - **THEN** the step makes no model call for it
+
+### Requirement: What the prompt names
+
+The step's prompt SHALL name the file and those of its tests that exist. It SHALL NOT name the file's importers or
+direct the model to read other files.
+
+#### Scenario: Imported file
+
+- **WHEN** `src/format.js` is imported by `src/Price.tsx` and `src/Total.tsx`
+- **THEN** the prompt names `src/format.js` and neither importer

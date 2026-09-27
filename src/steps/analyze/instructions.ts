@@ -1,5 +1,3 @@
-import type { Importer } from '../step.js';
-
 /** Standing instructions, identical for every file so they are cached. */
 export const SYSTEM_PROMPT = `You review one file of a React codebase before it is modernised (class components to function components, JavaScript to TypeScript, simplification). Your job is to find bugs and risks and report them with report_bug. You cannot change anything, and nothing should change: the modernisation keeps behaviour exactly, bugs included, so a person decides what to fix.
 
@@ -25,7 +23,6 @@ Rules:
 export interface PromptInput {
   file: string;
   tests: readonly string[];
-  importers: readonly Importer[];
   /** The linter's output for the file, or undefined when no linter could run. */
   lint: string | undefined;
 }
@@ -35,11 +32,6 @@ export function buildPrompt(input: PromptInput): string {
   const lines = [`File to review: ${input.file}`];
   if (input.tests.length > 0) {
     lines.push(`Its tests (read them for intent): ${input.tests.join(', ')}`);
-  }
-  if (input.importers.length > 0) {
-    lines.push(
-      `Imported by: ${input.importers.map((i) => i.file).join(', ')} — read one if you need to see how it is used.`,
-    );
   }
   lines.push(
     '',
