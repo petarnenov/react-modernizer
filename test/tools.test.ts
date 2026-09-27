@@ -1,8 +1,8 @@
-import { mkdir, mkdtemp, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { readOwnFilesTool } from '../src/steps/shared/tools.js';
+import { readOwnFilesTool, writeOneFileTool } from '../src/steps/shared/tools.js';
 
 async function project(): Promise<string> {
   const root = await mkdtemp(join(tmpdir(), 'modernizer-tools-'));
@@ -32,5 +32,25 @@ describe('readOwnFilesTool', () => {
   it('still refuses paths outside the project', async () => {
     const root = await project();
     await expect(read(root, '../src/Card.jsx')).rejects.toThrow('outside the project');
+  });
+});
+
+describe('writeOneFileTool', () => {
+  const written = async (content: string) => {
+    const root = await project();
+    await writeOneFileTool(root, 'src/Card.tsx', 'write_file', '').run({ content } as never);
+    return readFile(join(root, 'src/Card.tsx'), 'utf8');
+  };
+
+  it('ends a file without a final newline with one', async () => {
+    expect(await written('export default Card;')).toBe('export default Card;\n');
+  });
+
+  it('reduces trailing blank and whitespace-only lines to one newline', async () => {
+    expect(await written('});\n\n\n   \n')).toBe('});\n');
+  });
+
+  it('writes content that already ends with one newline unchanged', async () => {
+    expect(await written('const a = 1;\n\nconst b = 2;\n')).toBe('const a = 1;\n\nconst b = 2;\n');
   });
 });

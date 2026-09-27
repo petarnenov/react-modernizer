@@ -223,7 +223,8 @@ describe('characterize-tests in a run', () => {
     const model = new ScriptedModel(async (tools, request) => {
       const file = /File under test: (\S+)/.exec(request.prompt)?.[1] ?? '';
       await call(tools, 'read_file', { path: file });
-      await call(tools, 'write_test_file', { content: passingTest(file) });
+      // Written without a final newline: the file on disk must end with exactly one.
+      await call(tools, 'write_test_file', { content: passingTest(file).trimEnd() });
       expect(await call(tools, 'run_tests', {})).toMatch(/^PASSED/);
     });
     const cfg = config(root);
@@ -242,6 +243,8 @@ describe('characterize-tests in a run', () => {
     expect(sh(root, 'show', 'main-modernized:src/Card.test.jsx')).toBe(
       "test('existing', () => {});",
     );
+    const committed = await readFile(join(root, 'src/api.characterization.test.js'), 'utf8');
+    expect(committed.endsWith('\n') && !committed.endsWith('\n\n')).toBe(true);
     const cardPrompt = model.requests.find((r) => r.prompt.includes('src/Card.jsx'))?.prompt;
     expect(cardPrompt).toContain('Existing tests you may read for context');
     expect(model.requests[0]?.model).toBe('claude-sonnet-5');

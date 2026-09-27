@@ -117,7 +117,10 @@ export function readOwnFilesTool(cwd: string, paths: readonly string[]): ModelTo
   });
 }
 
-/** A write tool bound to one file: it takes content only, so there is no path to point anywhere else. */
+/**
+ * A write tool bound to one file: it takes content only, so there is no path to point anywhere else. The file always
+ * ends with exactly one newline, however the model ended it.
+ */
 export function writeOneFileTool(
   cwd: string,
   path: string,
@@ -129,7 +132,7 @@ export function writeOneFileTool(
     description,
     inputSchema: z.object({ content: z.string().min(1).describe('The whole file') }),
     run: async ({ content }) => {
-      await writeFile(join(cwd, path), content);
+      await writeFile(join(cwd, path), `${content.replace(/\s+$/, '')}\n`);
       return `wrote ${path}`;
     },
   });
