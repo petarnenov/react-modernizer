@@ -194,11 +194,11 @@ export const configSchema = z
       .default({ workers: 1, requestsPerMinute: 50 }),
     budget: z
       .object({
-        maxTokensPerFile: z.number().int().positive().default(200_000),
+        maxTokensPerFile: z.number().int().positive().default(1_000_000_000_000),
         maxTotalCostUsd: z.number().positive().nullable().default(null),
       })
       .strict()
-      .default({ maxTokensPerFile: 200_000, maxTotalCostUsd: null }),
+      .default({ maxTokensPerFile: 1_000_000_000_000, maxTotalCostUsd: null }),
     batching: z
       .object({
         by: z.enum(['directory', 'none']).default('directory'),

@@ -37,6 +37,13 @@ describe('parseConfig', () => {
     expect(source.exclude).toEqual(['src/legacy/**']);
   });
 
+  it('defaults the token budget to effectively unlimited, and keeps a set one', () => {
+    expect(parseConfig({ target: '.' }).budget.maxTokensPerFile).toBe(1_000_000_000_000);
+    expect(
+      parseConfig({ target: '.', budget: { maxTokensPerFile: 800_000 } }).budget.maxTokensPerFile,
+    ).toBe(800_000);
+  });
+
   it('defaults the gate timeout', () => {
     const config = parseConfig({ target: '.' });
 

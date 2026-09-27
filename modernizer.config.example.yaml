@@ -74,7 +74,7 @@ concurrency:
   requestsPerMinute: 50
 
 budget:
-  maxTokensPerFile: 200000
+  maxTokensPerFile: 1000000000000 # effectively unlimited; the turn limit and retries still bound a file
   maxTotalCostUsd: null
 
 batching: { by: directory, maxFiles: 40 }
